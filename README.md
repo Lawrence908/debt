@@ -133,3 +133,22 @@ than an obvious gap.
 Assembled with Claude, made by Anthropic. The page reports on Anthropic among other companies.
 Those figures come from the same third-party sources as everything else, but the conflict of
 interest is worth stating rather than burying.
+
+## Checking the links
+
+```bash
+python3 scripts/check-sources.py
+```
+
+Walks the data, requests every distinct `source_url`, and reports status plus the final URL after
+redirects. Two link errors reached this repo before it existed, both found by hand: a page cited at
+two different paths, and a bare host standing in for an endpoint.
+
+Two things it gets right that a naive checker does not. It sends full browser headers, because
+several publishers answer 403 to a bare scripted request while serving a reader fine. And it counts
+bot-protected hosts separately from broken ones: `cbo.gov` serves a captcha and `ropesgray.com` a
+Cloudflare interstitial to any automated client, and reporting those as failures every run would
+train whoever reads the output to skim past a real one.
+
+A redirect is treated as a canonicalisation candidate rather than a pass, since that is how the
+duplicate source path was caught.

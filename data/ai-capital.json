@@ -40,16 +40,17 @@
         "note": "Nearly double the prior year."
       },
       {
-        "id": "ai_related_debt_outstanding_2026",
-        "label": "Total AI-related debt outstanding, 2026 run rate",
+        "id": "ai_debt_issuance_forecast_2026",
+        "label": "Global AI-related debt issuance, 2026 forecast",
         "value": 570,
         "unit": "USD_billions",
         "as_of": "2026",
-        "confidence": "estimate",
-        "source": "Lynk Capital Markets summary of institutional research",
-        "source_url": "https://lynkcm.com/ai-data-center-financing-private-credit",
-        "note": "Straddles measures A and C — includes some private credit. Kept here as the headline figure most commonly quoted.",
-        "disputed": "Mislabelled on two counts. $570B is Morgan Stanley's forecast of 2026 AI-related debt ISSUANCE, a flow, not debt outstanding, a stock; and the attributing source does not appear in the literature, the likely origin being Goldman Sachs strategist Amanda Lynam, who is cited for a separate $489B year-to-date issuance figure. The best-evidenced stock figure is JPMorgan's $1.2T of AI-linked investment-grade debt as of October 2025. See https://finance.yahoo.com/sectors/technology/articles/global-ai-debt-issuance-top-085023868.html and https://structuredfinance.org/ai-becomes-largest-segment-of-investment-grade-debt/"
+        "confidence": "projection",
+        "scope": "All AI-related issuance globally and across sectors: hyperscalers, chipmakers, neoclouds, data-centre developers and utilities. Not the hyperscalers alone.",
+        "source": "Morgan Stanley, via Reuters",
+        "source_url": "https://finance.yahoo.com/sectors/technology/articles/global-ai-debt-issuance-top-085023868.html",
+        "note": "A flow, not a stock. This is the amount expected to be raised during 2026, so it cannot be compared with the outstanding balances above: those are what is owed at a moment, this is what gets borrowed over a year. More than double the $322B raised in 2025.",
+        "correction": "Held until 2026-09-04 as 'total AI-related debt outstanding, 2026 run rate', a stock, and attributed to a source that does not appear in the literature. Both were wrong. Recorded rather than quietly tidied away, because the mistake it invited, reading an annual borrowing figure as a debt balance, is the single easiest error to make on this subject."
       },
       {
         "id": "ai_ig_debt_outstanding_2025",
@@ -205,8 +206,8 @@
         "as_of": "2026",
         "confidence": "projection",
         "source": "ValueAdd VC, from company guidance",
-        "source_url": "https://valueaddvc.com/blog/ai-hyperscaler-capex-compared-why-microsoft-google-meta-and-amazon-are-all-spending-at-once",
-        "note": "Microsoft about $190B, Alphabet $195B to $205B, Amazon about $200B, Meta $125B to $145B. Up 4.9 times from $148.1B in 2023, which is a like-for-like multiple because both years are four-company. Roughly $25B of Microsoft's increase, and part of Meta's, is component price inflation rather than more capacity.",
+        "source_url": "https://valueaddvc.com/blog/big-tech-ai-capex-in-2025-microsoft-google-meta-amazon-and-the-spending-race",
+        "note": "Up 4.9 times from $148.1B in 2023, a like-for-like multiple because both years are four-company. Roughly $25B of Microsoft's increase, and part of Meta's, is component price inflation rather than more capacity.",
         "scope": "Four companies: Microsoft, Alphabet, Amazon, Meta. Oracle excluded.",
         "alternatives": [
           {
@@ -224,10 +225,21 @@
             "scope": "Five largest.",
             "basis": "Comparable estimate",
             "source": "J.P. Morgan",
-            "source_url": "https://valueaddvc.com/blog/ai-hyperscaler-capex-compared-why-microsoft-google-meta-and-amazon-are-all-spending-at-once",
+            "source_url": "https://valueaddvc.com/blog/big-tech-ai-capex-in-2025-microsoft-google-meta-amazon-and-the-spending-race",
             "confidence": "estimate"
           }
-        ]
+        ],
+        "guidance": {
+          "as_of": "2026-09-04",
+          "note": "Per-company guidance as the source stated it when last checked. It moves during the year, so it is dated separately from the total.",
+          "companies": {
+            "Microsoft": "~$190B",
+            "Amazon": "~$200B",
+            "Google": "$175B to $185B",
+            "Meta": "$115B to $135B"
+          }
+        },
+        "scope_confirmed": "The source headline names Microsoft, Google, Meta and Amazon and does not mention Oracle anywhere, which independently confirms the four-company scope."
       }
     ],
     "history": {
