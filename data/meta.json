@@ -148,5 +148,10 @@
     "POPTOTCAA647NWDB": "Canada population, annual",
     "MKTGDPCAA646NWDB": "Canada nominal GDP, annual",
     "DEXCAUS": "Canadian dollars per US dollar, daily"
+  },
+  "consumed_by": {
+    "endpoint": "/api/data",
+    "note": "The page fetches one composed payload rather than these files directly. The payload is built from disk and cached on the newest mtime here, so a refresh run from host cron is reflected on the next request without restarting the container.",
+    "schedule": "Host crontab, daily 0615 UTC: docker exec debt-updater python /app/server.py --refresh"
   }
 }

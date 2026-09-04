@@ -24,9 +24,12 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health || exit 1"]
       interval: 30s
-      timeout: 5s
+      # 5s was marking the container unhealthy while it was returning "ok":
+      # this box runs a lot of containers and a build next door is enough to
+      # push a trivial probe past the deadline.
+      timeout: 15s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
   debt-updater:
     build:

@@ -48,11 +48,12 @@ STATE_FILE = os.path.join(DATA_DIR, "updater-state.json")
 SERIES_FILE = os.path.join(DATA_DIR, "series.json")
 
 MAX_CHANGE_PCT = 20.0        # refuse a write beyond this; see module docstring
-REFRESH_SECONDS = 24 * 3600  # quarterly series, checked daily
-RETRY_BASE_SECONDS = 120
-RETRY_MAX_SECONDS = 3600
-RETRY_MAX_DOUBLINGS = 10
 CHANGELOG_IN_PAYLOAD = 100
+
+# Curated files, in the order the page expects them.
+CURATED = ["meta", "gdp", "federal-debt", "ai-capital", "household-debt", "cycles"]
+
+_payload_cache = {"stamp": None, "body": None}
 
 _state = {"last_run": None, "last_error": None, "failures": 0, "results": []}
 _lock = threading.Lock()
@@ -581,44 +582,94 @@ def backfill_historical(write=False):
 
 # --------------------------------------------------------------------------
 # scheduling
+#
+# The schedule lives in the host crontab, not in here. Every scheduled
+# container job on this box is a crontab entry calling docker exec, and one
+# scheduler that is visible from `crontab -l` beats an invisible thread. Retry
+# cadence is therefore the cron cadence: a failed run is logged and the next
+# tick tries again.
 # --------------------------------------------------------------------------
 
-def next_delay(failures):
-    """A clean run waits the full interval; a failure backs off from 2 min."""
-    if failures <= 0:
-        return REFRESH_SECONDS
-    doublings = min(failures - 1, RETRY_MAX_DOUBLINGS)
-    return min(RETRY_BASE_SECONDS * (2 ** doublings), RETRY_MAX_SECONDS)
+def refresh_all():
+    """Both halves, in order. The single command cron calls.
 
-
-def refresher():
-    failures = 0
-    while True:
-        time.sleep(next_delay(failures))
-        try:
-            refresh_series()
-            results = run_once()
-            failures = 0 if not any(r["action"] == "error" for r in results) else failures + 1
-        except Exception as exc:  # noqa: BLE001 - the loop must outlive any single run
-            failures += 1
-            with _lock:
-                _state["last_error"] = "%s: %s" % (type(exc).__name__, exc)
-            print("run failed: %s" % _state["last_error"], flush=True)
+    Series first, because the curated targets are compared against GDP figures
+    the series fetch may itself have moved; the other order would measure a
+    change against a stale denominator.
+    """
+    refresh_series()
+    return run_once(write=True)
 
 
 # --------------------------------------------------------------------------
 # read-only HTTP
 # --------------------------------------------------------------------------
 
+def data_stamp():
+    """Newest mtime across everything the payload is built from."""
+    newest = 0.0
+    for name in CURATED:
+        path = os.path.join(DATA_DIR, name + ".json")
+        try:
+            newest = max(newest, os.path.getmtime(path))
+        except OSError:
+            continue
+    for path in (SERIES_FILE, CHANGELOG):
+        try:
+            newest = max(newest, os.path.getmtime(path))
+        except OSError:
+            continue
+    return newest
+
+
+def build_data_payload():
+    """Everything the page consumes, in one object.
+
+    Composed from disk rather than held in memory, because the refresh runs
+    outside this process via docker exec. An in-memory payload would keep
+    serving superseded figures until the container restarted, while the files
+    on disk were already current -- stale numbers behind a healthy endpoint,
+    which is the failure mode this whole project exists to avoid. The mtime
+    cache keeps the common case a dict lookup.
+    """
+    stamp = data_stamp()
+    if _payload_cache["stamp"] == stamp and _payload_cache["body"] is not None:
+        return _payload_cache["body"]
+
+    payload = {"generated_at": datetime.now(timezone.utc).isoformat()}
+    for name in CURATED:
+        try:
+            payload[name] = load(name + ".json")
+        except Exception as exc:  # noqa: BLE001 - a missing file is reported, not fatal
+            payload[name] = None
+            payload.setdefault("errors", {})[name] = str(exc)
+    try:
+        series = json.load(open(SERIES_FILE))
+        payload["series"] = series.get("series", {})
+        payload["derived"] = series.get("derived", {})
+        payload["series_fetched_at"] = series.get("fetched_at")
+    except Exception as exc:  # noqa: BLE001 - charts degrade, the page still renders
+        payload["series"] = {}
+        payload["derived"] = {}
+        payload.setdefault("errors", {})["series"] = str(exc)
+
+    recent, total = read_changelog(CHANGELOG_IN_PAYLOAD)
+    payload["changelog"] = {"total": total, "recent": recent}
+
+    _payload_cache["stamp"] = stamp
+    _payload_cache["body"] = payload
+    return payload
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def _send(self, code, body, ctype="application/json"):
+    def _send(self, code, body, ctype="application/json", cache="no-cache"):
         raw = json.dumps(body).encode() if ctype == "application/json" else body.encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(raw)))
-        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Cache-Control", cache)
         self.end_headers()
         self.wfile.write(raw)
 
@@ -626,6 +677,9 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == "/api/health":
             self._send(200, {"status": "ok"})
+        elif path == "/api/data":
+            self._send(200, build_data_payload(),
+                       cache="public, max-age=300, must-revalidate")
         elif path == "/api/status":
             with _lock:
                 snapshot = dict(_state)
@@ -651,18 +705,24 @@ def main():
     if "--series" in sys.argv:
         refresh_series()
         return
+    if "--refresh" in sys.argv:
+        refresh_all()
+        return
     if "--backfill-historical" in sys.argv:
         backfill_historical(write="--write" in sys.argv)
         return
 
-    print("updater starting: write=%s fred_key=%s" % (WRITE_ENABLED, bool(FRED_KEY)), flush=True)
-    # series.json is machine-owned, so it is built at startup rather than
-    # waiting a full interval -- a fresh container should serve charts at once.
-    try:
-        refresh_series()
-    except Exception as exc:  # noqa: BLE001 - the server must come up regardless
-        print("initial series fetch failed: %s" % exc, flush=True)
-    threading.Thread(target=refresher, daemon=True).start()
+    print("updater starting: write=%s fred_key=%s (schedule: host cron)"
+          % (WRITE_ENABLED, bool(FRED_KEY)), flush=True)
+    # Built at startup rather than waiting for the first cron tick, so a freshly
+    # built container serves charts immediately. Threaded so a slow FRED does
+    # not hold the port closed and fail the healthcheck.
+    def warm():
+        try:
+            refresh_series()
+        except Exception as exc:  # noqa: BLE001 - the server must come up regardless
+            print("initial series fetch failed: %s" % exc, flush=True)
+    threading.Thread(target=warm, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", 8000), Handler).serve_forever()
 
 

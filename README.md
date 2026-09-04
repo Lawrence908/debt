@@ -52,13 +52,45 @@ Two different owners, two different failure modes, so they live apart.
 thirteen FRED series and roughly 2,900 observations, is rewritten wholesale on every run, and is
 gitignored. Putting a 241-point quarterly array in a curated file would bury every real edit.
 
+## How the page gets its data
+
+One endpoint, not seven static files:
+
+```
+GET /api/data -> meta, gdp, federal-debt, ai-capital, household-debt, cycles,
+                 series, derived, changelog, generated_at
+```
+
+The payload is composed **from disk**, cached on the newest mtime across the data directory.
+That is the one deliberate difference from diesel, which serves its payload from memory. Here the
+refresh runs outside the process via `docker exec`, so an in-memory payload would keep serving
+superseded figures until the container restarted while the files on disk were already current:
+stale numbers behind a healthy endpoint, which is exactly the failure this project exists to
+avoid. A cron write is visible on the next request, no restart needed.
+
+`data/` is still mounted into nginx so a single raw file can be inspected with `curl`, but
+nothing links to it.
+
 ## The updater
 
 ```bash
-docker exec debt-updater python /app/server.py --once            # dry run
-docker exec debt-updater python /app/server.py --once --write    # apply
-docker exec debt-updater python /app/server.py --series          # refresh long series
+docker exec debt-updater python /app/server.py --refresh          # what cron runs
+docker exec debt-updater python /app/server.py --once             # dry run
+docker exec debt-updater python /app/server.py --once --write     # apply curated only
+docker exec debt-updater python /app/server.py --series           # long series only
 ```
+
+The schedule lives in the host crontab, not in the container, matching every other scheduled job
+on this box:
+
+```cron
+15 6 * * * docker exec debt-updater python /app/server.py --refresh >> /home/chris/logs/debt-updater.log 2>&1
+7 4 1 * * : > /home/chris/logs/debt-updater.log
+```
+
+One scheduler, visible from `crontab -l`. Retry cadence is the cron cadence: a failed run is
+logged and the next tick tries again. The second line exists because nothing rotates
+`/home/chris/logs`, so a daily append would grow without bound.
 
 Four guardrails, each of which has already caught something real:
 
