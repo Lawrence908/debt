@@ -45,6 +45,7 @@ WRITE_ENABLED = os.environ.get("UPDATER_WRITE", "0") == "1"
 
 CHANGELOG = os.path.join(DATA_DIR, "changelog.jsonl")
 STATE_FILE = os.path.join(DATA_DIR, "updater-state.json")
+SERIES_FILE = os.path.join(DATA_DIR, "series.json")
 
 MAX_CHANGE_PCT = 20.0        # refuse a write beyond this; see module docstring
 REFRESH_SECONDS = 24 * 3600  # quarterly series, checked daily
@@ -198,6 +199,137 @@ MANUAL_TARGETS = [
     {"key": "ai-capital", "file": "ai-capital.json",
      "reason": "SEC filings, ratings notes and press reporting. Not automatable. Carries last_reviewed; the page shows staleness instead of pretending freshness."},
 ]
+
+
+# --------------------------------------------------------------------------
+# long time series
+#
+# These land in series.json, which is machine-owned and never hand-edited. The
+# split matters: the curated files are the spec a human reviews in a diff, and
+# a 241-point quarterly array dropped into one would bury every real edit.
+# Writing here is therefore not gated on UPDATER_WRITE -- nothing in this file
+# can overwrite a researched figure.
+# --------------------------------------------------------------------------
+
+SERIES = [
+    ("GFDEGDQ188S", "US total public debt", "percent_of_gdp",
+     "Federal debt including intragovernmental holdings. The number cable news quotes."),
+    ("FYGFGDQ188S", "US debt held by the public", "percent_of_gdp",
+     "Excludes money the government owes itself. The measure CBO and most economists use."),
+    ("GDP", "US nominal GDP", "USD_billions", "Quarterly, seasonally adjusted annual rate."),
+    ("GFDEBTN", "US total public debt outstanding", "USD_millions", "Quarterly level."),
+    ("HDTGPDUSQ163N", "US household debt", "percent_of_gdp",
+     "BIS basis. Directly comparable with the Canadian series below, which the national collections are not."),
+    ("HDTGPDCAQ163N", "Canada household debt", "percent_of_gdp",
+     "BIS basis, same methodology as the US series."),
+    ("TDSP", "US household debt service ratio", "percent",
+     "Required debt payments as a share of disposable personal income. The US counterpart to StatCan's DSR."),
+    ("CDSP", "US consumer debt service ratio", "percent", "Non-mortgage consumer debt only."),
+    ("BCNSDODNS", "US nonfinancial corporate debt", "USD_millions",
+     "All debt securities and loans of nonfinancial corporate business. The denominator that puts AI borrowing in proportion."),
+    ("A091RC1Q027SBEA", "US federal interest payments", "USD_billions", "Annual rate, quarterly observations."),
+    ("POPTHM", "US population", "thousands", "Monthly."),
+    ("POPTOTCAA647NWDB", "Canada population", "persons", "World Bank, annual."),
+    ("MKTGDPCAA646NWDB", "Canada nominal GDP", "USD", "World Bank, annual, market exchange rates."),
+]
+
+
+def build_series():
+    """Fetch every long series. A failure on one is recorded, not fatal."""
+    out = {}
+    errors = {}
+    for series_id, label, unit, note in SERIES:
+        try:
+            obs = fred_series(series_id)
+            dates = sorted(obs)
+            out[series_id] = {
+                "label": label,
+                "unit": unit,
+                "note": note,
+                "source": "FRED " + series_id,
+                "source_url": "https://fred.stlouisfed.org/series/" + series_id,
+                "confidence": "reported",
+                "as_of": dates[-1],
+                "dates": dates,
+                "values": [obs[d] for d in dates],
+            }
+        except Exception as exc:  # noqa: BLE001 - one dead series must not sink the rest
+            errors[series_id] = "%s: %s" % (type(exc).__name__, exc)
+            print("series %s failed: %s" % (series_id, errors[series_id]), flush=True)
+    return out, errors
+
+
+def latest(series, series_id):
+    entry = series.get(series_id)
+    if not entry or not entry["values"]:
+        return None, None
+    return entry["values"][-1], entry["as_of"]
+
+
+def derive(series, curated):
+    """Per-capita figures, computed from sourced inputs rather than asserted.
+
+    Returned with the inputs that produced them so a reader can check the
+    arithmetic instead of trusting it.
+    """
+    out = {}
+    us_pop, us_pop_date = latest(series, "POPTHM")          # thousands
+    ca_pop, ca_pop_date = latest(series, "POPTOTCAA647NWDB")  # persons
+
+    us_debt = curated.get("household-debt.json", {}).get("united_states", {}).get("total_debt", {})
+    if us_pop and us_debt.get("value"):
+        out["us_household_debt_per_capita"] = {
+            "value": round(us_debt["value"] * 1e12 / (us_pop * 1000.0)),
+            "unit": "USD",
+            "as_of": us_debt.get("as_of"),
+            "confidence": "estimate",
+            "source": "Derived: NY Fed total household debt over FRED POPTHM",
+            "source_url": "https://fred.stlouisfed.org/series/POPTHM",
+            "inputs": {"total_debt_usd_trillions": us_debt["value"],
+                       "population": round(us_pop * 1000), "population_as_of": us_pop_date},
+        }
+
+    ca_debt = curated.get("household-debt.json", {}).get("canada", {}).get("total_credit_market_debt", {})
+    if ca_pop and ca_debt.get("value"):
+        out["ca_household_debt_per_capita"] = {
+            "value": round(ca_debt["value"] * 1e9 / ca_pop),
+            "unit": "CAD",
+            "as_of": ca_debt.get("as_of"),
+            "confidence": "estimate",
+            "source": "Derived: StatCan credit market debt over World Bank population via FRED",
+            "source_url": "https://fred.stlouisfed.org/series/POPTOTCAA647NWDB",
+            "inputs": {"total_debt_cad_billions": ca_debt["value"],
+                       "population": ca_pop, "population_as_of": ca_pop_date},
+        }
+    return out
+
+
+def refresh_series():
+    series, errors = build_series()
+    if not series:
+        raise ValueError("no series fetched")
+    curated = {}
+    for name in ("household-debt.json",):
+        try:
+            curated[name] = load(name)
+        except Exception:  # noqa: BLE001 - derived figures are optional
+            pass
+    payload = {
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "note": "Machine-fetched long series. Never hand-edited; the updater overwrites this file wholesale.",
+        "errors": errors,
+        "derived": derive(series, curated),
+        "series": series,
+    }
+    tmp = SERIES_FILE + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(payload, fh, separators=(",", ":"))
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, SERIES_FILE)
+    total = sum(len(s["values"]) for s in series.values())
+    print("series refreshed: %d series, %d observations, %d errors"
+          % (len(series), total, len(errors)), flush=True)
+    return payload
 
 
 # --------------------------------------------------------------------------
@@ -464,6 +596,7 @@ def refresher():
     while True:
         time.sleep(next_delay(failures))
         try:
+            refresh_series()
             results = run_once()
             failures = 0 if not any(r["action"] == "error" for r in results) else failures + 1
         except Exception as exc:  # noqa: BLE001 - the loop must outlive any single run
@@ -515,11 +648,20 @@ def main():
     if "--once" in sys.argv:
         run_once(write="--write" in sys.argv)
         return
+    if "--series" in sys.argv:
+        refresh_series()
+        return
     if "--backfill-historical" in sys.argv:
         backfill_historical(write="--write" in sys.argv)
         return
 
     print("updater starting: write=%s fred_key=%s" % (WRITE_ENABLED, bool(FRED_KEY)), flush=True)
+    # series.json is machine-owned, so it is built at startup rather than
+    # waiting a full interval -- a fresh container should serve charts at once.
+    try:
+        refresh_series()
+    except Exception as exc:  # noqa: BLE001 - the server must come up regardless
+        print("initial series fetch failed: %s" % exc, flush=True)
     threading.Thread(target=refresher, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", 8000), Handler).serve_forever()
 

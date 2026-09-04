@@ -61,7 +61,8 @@
         "year": 2023,
         "value": 148.1,
         "unit": "USD_billions",
-        "note": "Five hyperscalers."
+        "note": "Five hyperscalers.",
+        "disputed": "Labelled five hyperscalers, but $148.1B matches the four-company cash-capex sum from SEC XBRL facts ($147.23B, within 0.6 percent) rather than either five-company basis ($161.29B on broad capex). Almost certainly a four-company figure."
       },
       {
         "year": 2025,
@@ -73,7 +74,8 @@
         "year": 2026,
         "value": 725,
         "unit": "USD_billions",
-        "note": "Five hyperscalers, including Oracle. J.P. Morgan's comparable estimate is $697B."
+        "note": "Five hyperscalers, including Oracle. J.P. Morgan's comparable estimate is $697B.",
+        "disputed": "The $725B source covers four companies and excludes Oracle. See the same note in ai-capital.json."
       }
     ],
     "capex_share_of_us_gdp_2026": {

@@ -48,7 +48,8 @@
         "confidence": "estimate",
         "source": "Lynk Capital Markets summary of institutional research",
         "source_url": "https://lynkcm.com/ai-data-center-financing-private-credit",
-        "note": "Straddles measures A and C — includes some private credit. Kept here as the headline figure most commonly quoted."
+        "note": "Straddles measures A and C — includes some private credit. Kept here as the headline figure most commonly quoted.",
+        "disputed": "Mislabelled on two counts. $570B is Morgan Stanley's forecast of 2026 AI-related debt ISSUANCE, a flow, not debt outstanding, a stock; and the attributing source does not appear in the literature, the likely origin being Goldman Sachs strategist Amanda Lynam, who is cited for a separate $489B year-to-date issuance figure. The best-evidenced stock figure is JPMorgan's $1.2T of AI-linked investment-grade debt as of October 2025. See https://finance.yahoo.com/sectors/technology/articles/global-ai-debt-issuance-top-085023868.html and https://structuredfinance.org/ai-becomes-largest-segment-of-investment-grade-debt/"
       }
     ],
     "leverage_ratios": {
@@ -86,6 +87,75 @@
         }
       ],
       "interpretation": "On this measure alone there is no distress. Debt/EBITDA under 1.5x is conservative for any industrial company. The analyst's own conclusion was that at current issuance pace there are at least two years before credit ratings come under pressure. This is the measure that makes the AI buildout look comfortably financed, and it is the measure that excludes most of the actual financing."
+    },
+    "history": {
+      "chartable": true,
+      "note": "Issuance is a flow, not a stock. Only the broad-scope series exists across the whole period: the five-hyperscaler scope has no published annual figure before 2024, and every source substitutes the same 2020-2024 average instead of decomposing it. Debt outstanding is deliberately absent: no analyst back-tagged the index before late 2025, so there is nothing to plot.",
+      "series": [
+        {
+          "id": "issuance_broad",
+          "label": "Big tech AI bond issuance",
+          "unit": "USD_billions",
+          "scope": "About 20 USD investment-grade issuers tagged as big-tech AI, wider than the five hyperscalers: includes Broadcom, Apple, IBM, Cisco, Dell, Micron, Visa, Amex.",
+          "source": "MUFG Capital Markets Strategy, underlying data Reuters (2019-2024) and CFR/Bloomberg (2025)",
+          "source_url": "https://www.mufgamericas.com/sites/default/files/document/2025-12/AI_Chart_Weekly_12_19_Financing_the_AI_Supercycle.pdf",
+          "confidence": "reported",
+          "basis_break": "MUFG attributes 2015-2024 to Reuters and 2025 to CFR/Bloomberg, so part of the 2024-to-2025 step is a methodology change rather than pure growth.",
+          "points": [
+            {
+              "year": 2019,
+              "value": 34
+            },
+            {
+              "year": 2020,
+              "value": 38
+            },
+            {
+              "year": 2021,
+              "value": 14
+            },
+            {
+              "year": 2022,
+              "value": 38
+            },
+            {
+              "year": 2023,
+              "value": 14
+            },
+            {
+              "year": 2024,
+              "value": 17
+            },
+            {
+              "year": 2025,
+              "value": 245
+            }
+          ]
+        },
+        {
+          "id": "issuance_narrow",
+          "label": "Five-hyperscaler bond issuance",
+          "unit": "USD_billions",
+          "scope": "Alphabet, Amazon, Meta, Microsoft, Oracle only.",
+          "source": "IESE Insight (2024); Quinn Emanuel citing Mellon Investments (2025)",
+          "source_url": "https://www.iese.edu/insight/articles/ai-credit-market-debt/",
+          "confidence": "reported",
+          "note": "Starts in 2024 because no earlier annual figure is published at this scope.",
+          "points": [
+            {
+              "year": 2024,
+              "value": 20,
+              "source_url": "https://www.iese.edu/insight/articles/ai-credit-market-debt/"
+            },
+            {
+              "year": 2025,
+              "value": 121,
+              "source_url": "https://www.quinnemanuel.com/media/4dzkfccz/client-alert-ai-data-center-financing-and-litigation-risks.pdf",
+              "disputed": "Three values circulate for this identical scope: $121B (Quinn Emanuel, M&G, all tracing to one origin, Mellon Dec 2025), $109B (IESE Insight), and $93B (Vanguard, computed independently from Bloomberg). A 30 percent spread, most likely gross versus net and US-only versus global. Mellon's original wording was 'so far in 2025', which later sources hardened into a full-year figure."
+            }
+          ]
+        }
+      ]
     }
   },
   "measure_b_commitments": {
@@ -111,9 +181,92 @@
         "confidence": "projection",
         "source": "KB Securities; corroborated by Yahoo Finance earnings roundup",
         "source_url": "https://finance.yahoo.com/markets/article/magnificent-7-earnings-rush-reveals-ai-spending-surge-with-hyperscaler-capex-set-to-reach-725-billion-in-2026-224901707.html",
-        "note": "Alphabet, Microsoft, Amazon, Meta, Oracle. Up 4.9x from $148.1B in 2023. J.P. Morgan's comparable figure is $697B for the five largest, revised up $173B during the year. Company guidance: Microsoft ~$190B, Alphabet $180–190B, Meta $125–145B. Roughly $25B of Microsoft's and part of Meta's increase is component price inflation rather than more capacity."
+        "note": "Alphabet, Microsoft, Amazon, Meta, Oracle. Up 4.9x from $148.1B in 2023. J.P. Morgan's comparable figure is $697B for the five largest, revised up $173B during the year. Company guidance: Microsoft ~$190B, Alphabet $180–190B, Meta $125–145B. Roughly $25B of Microsoft's and part of Meta's increase is component price inflation rather than more capacity.",
+        "disputed": "Scope label is wrong. The source covers FOUR companies and excludes Oracle explicitly, not five. Oracle alone is running about $56B a year, so a genuine five-company 2026 figure would be materially above $725B. See https://valueaddvc.com/blog/ai-hyperscaler-capex-compared-why-microsoft-google-meta-and-amazon-are-all-spending-at-once"
       }
-    ]
+    ],
+    "history": {
+      "chartable": true,
+      "note": "The best-evidenced of the three measures. Capex points are sums of reported SEC XBRL cash-flow facts; the lease series is read from 10-K footnotes because no company XBRL-tags it.",
+      "series": [
+        {
+          "id": "capex_four",
+          "label": "Hyperscaler capital expenditure",
+          "unit": "USD_billions",
+          "scope": "Four companies: Microsoft, Alphabet, Amazon, Meta. Cash flow statement 'purchases of property and equipment'. Oracle excluded, since its May fiscal year-end cannot be put on a calendar basis without derivation.",
+          "source": "SEC XBRL company facts, summed across the four filers",
+          "source_url": "https://data.sec.gov/api/xbrl/companyconcept/CIK0001652044/us-gaap/PaymentsToAcquirePropertyPlantAndEquipment.json",
+          "confidence": "estimate",
+          "note": "The only basis available across the whole period. A wider 'broad capex' definition adding finance-lease right-of-use assets runs about 9 percent higher and is what most press coverage quotes.",
+          "points": [
+            {
+              "year": 2019,
+              "value": 69.06
+            },
+            {
+              "year": 2020,
+              "value": 95.18
+            },
+            {
+              "year": 2021,
+              "value": 127.6
+            },
+            {
+              "year": 2022,
+              "value": 151.08
+            },
+            {
+              "year": 2023,
+              "value": 147.23
+            },
+            {
+              "year": 2024,
+              "value": 228.34
+            },
+            {
+              "year": 2025,
+              "value": 376.05
+            }
+          ]
+        },
+        {
+          "id": "leases_uncommenced",
+          "label": "Signed but not yet commenced leases",
+          "unit": "USD_billions",
+          "scope": "Four companies: Microsoft, Alphabet, Amazon, Meta. Mixed year-ends before 2025.",
+          "source": "10-K and 10-Q lease footnotes, summed",
+          "source_url": "https://fortune.com/2026/02/25/hyperscaler-risk-off-balance-sheet-662-billion-data-center-commitments-meta-amazon-microsoft-oracle-alphabet/",
+          "confidence": "estimate",
+          "note": "Starts in 2020 because Amazon did not disclose a leases-not-yet-commenced line until its FY2020 10-K. The calendar-aligned five-company end-2025 sum, adding Oracle's $248B, comes to $661.7B against Moody's independently published $662B: a match within 0.05 percent, and the strongest cross-check in this dataset.",
+          "points": [
+            {
+              "year": 2020,
+              "value": 51.67
+            },
+            {
+              "year": 2021,
+              "value": 59.62
+            },
+            {
+              "year": 2022,
+              "value": 56.55
+            },
+            {
+              "year": 2023,
+              "value": 92.68
+            },
+            {
+              "year": 2024,
+              "value": 220.02
+            },
+            {
+              "year": 2025,
+              "value": 413.74
+            }
+          ]
+        }
+      ]
+    }
   },
   "measure_c_off_balance_sheet": {
     "label": "Plus SPVs, leasebacks and private credit",
@@ -139,7 +292,8 @@
         "confidence": "estimate",
         "source": "Wall Street Journal analysis, via 24/7 Wall St.",
         "source_url": "https://247wallst.com/investing/2026/08/22/alphabet-meta-and-microsoft-are-hiding-3-trillion-in-debt-on-the-ai-booms-hidden-ledger/",
-        "note": "Adds Nvidia, Broadcom, AMD and SpaceX to the Nikkei five. Based on filings mostly current through June 2026. The jump from $1.65T to $3T is largely scope, not revision — do not read it as the Nikkei number being doubled."
+        "note": "Adds Nvidia, Broadcom, AMD and SpaceX to the Nikkei five. Based on filings mostly current through June 2026. The jump from $1.65T to $3T is largely scope, not revision — do not read it as the Nikkei number being doubled.",
+        "disputed": "The as_of is the vintage of the underlying filings, not of publication: 24/7 Wall St. carried the analysis on 22 August 2026. The gap from the Nikkei figure is therefore about one month, which makes the $1.65T to $3.0T step even harder to read as growth."
       },
       {
         "id": "private_credit_ai_loans",
@@ -150,7 +304,8 @@
         "confidence": "estimate",
         "source": "Quinn Emanuel, citing market data",
         "source_url": "https://www.quinnemanuel.com/the-firm/publications/client-alert-emerging-litigation-risks-in-financing-ai-data-centers-boom/",
-        "note": "From near zero a few years earlier. Principal lenders: Blackstone, Blue Owl, Apollo, PIMCO, BlackRock."
+        "note": "From near zero a few years earlier. Principal lenders: Blackstone, Blue Owl, Apollo, PIMCO, BlackRock.",
+        "disputed": "Not an independent observation. The cited client alert restates BIS Bulletin 120 (Aldasoro, Doerr and Rees, 7 January 2026), which is the primary source and states 'over $200 billion' as a floor reflecting late-2025 data. There is one observation here, not two. https://www.bis.org/publ/bisbull120.pdf"
       },
       {
         "id": "ms_financing_gap",
@@ -241,6 +396,81 @@
       "source": "Ropes & Gray",
       "source_url": "https://www.ropesgray.com/en/insights/viewpoints/102mvfl/data-center-investment-in-2026-ai-demand-power-constraints-and-private-equity",
       "note": "A roughly $25B ABS market facing take-out needs approaching $300B. Annual data centre securitisation ran near $27B in 2025; JPMorgan projects $30–40B in 2026 and 2027. The gap between market capacity and refinancing need is the plumbing risk."
+    },
+    "history": {
+      "chartable": false,
+      "why_not": "These points cannot honestly be joined into a line. Every sourced value falls in a nine-month window, yet they range from $662B to $3,000B. The decisive evidence is that Bank of America's $2.3T and Nikkei's $1.65T cover the identical five companies one month apart and differ by 39 percent. That rules out both elapsed time and company count as the explanation and leaves definition. Ordered by definitional breadth rather than by date, the spread stops looking like growth and starts looking like what it is: analysts answering different questions.",
+      "points": [
+        {
+          "label": "Signed but uncommenced leases only",
+          "value": 662,
+          "unit": "USD_billions",
+          "as_of": "2025-12-31",
+          "scope": "Five companies. Leases only.",
+          "confidence": "reported",
+          "source": "Moody's Ratings, via Fortune",
+          "source_url": "https://fortune.com/2026/02/25/hyperscaler-risk-off-balance-sheet-662-billion-data-center-commitments-meta-amazon-microsoft-oracle-alphabet/"
+        },
+        {
+          "label": "All undiscounted future lease commitments",
+          "value": 969,
+          "unit": "USD_billions",
+          "as_of": "2025-12-31",
+          "scope": "Five companies. Commenced and uncommenced leases.",
+          "confidence": "reported",
+          "source": "Moody's Ratings, via Fortune",
+          "source_url": "https://fortune.com/2026/02/25/hyperscaler-risk-off-balance-sheet-662-billion-data-center-commitments-meta-amazon-microsoft-oracle-alphabet/"
+        },
+        {
+          "label": "Broad off-balance-sheet obligations",
+          "value": 1650,
+          "unit": "USD_billions",
+          "as_of": "2026-07",
+          "scope": "Five companies. Leases plus take-or-pay chip and power commitments plus vehicle financing.",
+          "confidence": "estimate",
+          "source": "Nikkei Asia",
+          "source_url": "https://thenextweb.com/news/tech-giants-hidden-off-balance-sheet-debt-ai"
+        },
+        {
+          "label": "Footnote debt",
+          "value": 2300,
+          "unit": "USD_billions",
+          "as_of": "2026-08",
+          "scope": "The same five companies as the Nikkei figure. A different definition, not a different company set.",
+          "confidence": "estimate",
+          "source": "Bank of America, analyst Savita Subramanian, via secondary reporting",
+          "source_url": "https://www.strattonjournal.com/articles/the-3-trillion-shadow-how-off-balance-sheet-ai-debt-is-reshaping-tech-finance",
+          "provenance_warning": "Secondary attribution only. The primary carrier could not be retrieved."
+        },
+        {
+          "label": "Purchase commitments plus uncommenced leases",
+          "value": 3000,
+          "unit": "USD_billions",
+          "as_of": "2026-06",
+          "scope": "Nine companies: the five plus Nvidia, Broadcom, AMD and SpaceX.",
+          "confidence": "estimate",
+          "source": "Wall Street Journal analysis, via 24/7 Wall St.",
+          "source_url": "https://247wallst.com/investing/2026/08/22/alphabet-meta-and-microsoft-are-hiding-3-trillion-in-debt-on-the-ai-booms-hidden-ledger/"
+        }
+      ],
+      "clean_comparison": {
+        "label": "Alphabet uncommenced lease payments",
+        "unit": "USD_billions",
+        "note": "One company, one definition, two adjacent quarters. The only genuine like-for-like change over time found in this research.",
+        "source": "Alphabet quarterly disclosures, cited in Fortune",
+        "source_url": "https://fortune.com/2026/02/25/hyperscaler-risk-off-balance-sheet-662-billion-data-center-commitments-meta-amazon-microsoft-oracle-alphabet/",
+        "confidence": "reported",
+        "points": [
+          {
+            "period": "2025-Q2",
+            "value": 23.9
+          },
+          {
+            "period": "2025-Q3",
+            "value": 42.6
+          }
+        ]
+      }
     }
   },
   "ai_native_companies": {
