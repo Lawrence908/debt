@@ -1,0 +1,11 @@
+.env
+compose.override.yaml
+*.log
+__pycache__/
+*.pyc
+
+# NOTE: data/ is deliberately NOT ignored. The JSON files are the spec, and the
+# acceptance criterion is "run the updater, review the log, commit". Runtime
+# artefacts the updater produces are listed individually instead.
+data/*.tmp
+data/updater.log
