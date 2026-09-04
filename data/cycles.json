@@ -61,28 +61,93 @@
         "year": 2023,
         "value": 148.1,
         "unit": "USD_billions",
-        "note": "Five hyperscalers.",
-        "disputed": "Labelled five hyperscalers, but $148.1B matches the four-company cash-capex sum from SEC XBRL facts ($147.23B, within 0.6 percent) rather than either five-company basis ($161.29B on broad capex). Almost certainly a four-company figure."
+        "note": "Previously labelled five hyperscalers. It is not: it matches the four-company sum of reported SEC cash-flow facts ($147.23B) within 0.6 percent, while the five-company basis for the same year is $161.29B.",
+        "scope": "Four companies: Microsoft, Alphabet, Amazon, Meta. Oracle excluded.",
+        "alternatives": [
+          {
+            "value": 147.23,
+            "unit": "USD_billions",
+            "scope": "Four companies: Microsoft, Alphabet, Amazon, Meta. Oracle excluded.",
+            "basis": "Cash flow statement purchases of property and equipment, summed",
+            "source": "SEC XBRL company facts",
+            "source_url": "https://data.sec.gov/",
+            "confidence": "estimate"
+          },
+          {
+            "value": 161.29,
+            "unit": "USD_billions",
+            "scope": "Five companies, adding Oracle.",
+            "basis": "Broad capex: cash capex plus finance-lease right-of-use assets obtained",
+            "source": "Epoch AI",
+            "source_url": "https://epoch.ai/data/charts/hyperscaler-capex-trend/stacked_hyperscalers_trend.csv",
+            "confidence": "reported"
+          }
+        ]
       },
       {
         "year": 2025,
         "value": 381,
         "unit": "USD_billions",
-        "note": "Four largest — Microsoft, Amazon, Alphabet, Meta."
+        "note": "Four largest: Microsoft, Amazon, Alphabet, Meta. Already on the four-company basis.",
+        "scope": "Four companies: Microsoft, Alphabet, Amazon, Meta. Oracle excluded.",
+        "alternatives": [
+          {
+            "value": 376.05,
+            "unit": "USD_billions",
+            "scope": "Four companies: Microsoft, Alphabet, Amazon, Meta. Oracle excluded.",
+            "basis": "Cash capex, SEC facts summed",
+            "source": "SEC XBRL company facts",
+            "source_url": "https://data.sec.gov/",
+            "confidence": "estimate"
+          },
+          {
+            "value": 448.23,
+            "unit": "USD_billions",
+            "scope": "Five companies, adding Oracle.",
+            "basis": "Broad capex including finance leases",
+            "source": "Epoch AI",
+            "source_url": "https://epoch.ai/data/charts/hyperscaler-capex-trend/stacked_hyperscalers_trend.csv",
+            "confidence": "reported"
+          }
+        ]
       },
       {
         "year": 2026,
         "value": 725,
         "unit": "USD_billions",
-        "note": "Five hyperscalers, including Oracle. J.P. Morgan's comparable estimate is $697B.",
-        "disputed": "The $725B source covers four companies and excludes Oracle. See the same note in ai-capital.json."
+        "note": "Company guidance. Previously labelled as including Oracle; the source excludes it explicitly. Oracle alone runs roughly $56B a year, so a genuine five-company figure would be materially higher.",
+        "scope": "Four companies: Microsoft, Alphabet, Amazon, Meta. Oracle excluded.",
+        "alternatives": [
+          {
+            "value": 770,
+            "unit": "USD_billions",
+            "scope": "Five companies, adding Oracle.",
+            "basis": "Trend extrapolation, not guidance",
+            "source": "Epoch AI",
+            "source_url": "https://epoch.ai/data-insights/hyperscaler-capex-trend",
+            "confidence": "projection"
+          },
+          {
+            "value": 697,
+            "unit": "USD_billions",
+            "scope": "Five largest.",
+            "basis": "Comparable estimate",
+            "source": "J.P. Morgan",
+            "source_url": "https://valueaddvc.com/blog/ai-hyperscaler-capex-compared-why-microsoft-google-meta-and-amazon-are-all-spending-at-once",
+            "confidence": "estimate"
+          }
+        ]
       }
     ],
     "capex_share_of_us_gdp_2026": {
-      "value": 2.2,
       "unit": "percent",
       "confidence": "estimate",
-      "note": "Derived: $725B against $32.48T US GDP. Roughly twice the telecom buildout's peak share of GDP, reached in about four years rather than five, and concentrated in fewer than ten companies rather than dozens."
+      "derived": true,
+      "formula": "hyperscaler_capex_2026 / us_gdp_nominal",
+      "note": "Recomputed by the page from the two current values rather than stored, so it cannot drift from them. Both sides are on the four-company basis.",
+      "source": "Derived",
+      "source_url": "",
+      "as_of": "derived"
     },
     "global_ai_spending_2026": {
       "value": 2.52,
@@ -94,7 +159,8 @@
     "sources": [
       "https://longyield.substack.com/p/the-ai-capex-boom-bubble-or-infrastructure",
       "https://finance.biggo.com/news/2428c7c0-9b1d-46c2-89e5-862ab4210490"
-    ]
+    ],
+    "capex_by_year_note": "All three points are on the four-company basis. Two were labelled five-company and are corrected here, which is what makes the multiple between 2023 and 2026 a like-for-like comparison rather than an artefact of counting a different number of companies."
   },
   "differences_that_matter": [
     {

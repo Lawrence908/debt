@@ -174,15 +174,35 @@
       },
       {
         "id": "hyperscaler_capex_2026",
-        "label": "Five-hyperscaler capital expenditure, 2026",
+        "label": "Four-hyperscaler capital expenditure, 2026",
         "value": 725,
         "unit": "USD_billions",
         "as_of": "2026",
         "confidence": "projection",
-        "source": "KB Securities; corroborated by Yahoo Finance earnings roundup",
-        "source_url": "https://finance.yahoo.com/markets/article/magnificent-7-earnings-rush-reveals-ai-spending-surge-with-hyperscaler-capex-set-to-reach-725-billion-in-2026-224901707.html",
-        "note": "Alphabet, Microsoft, Amazon, Meta, Oracle. Up 4.9x from $148.1B in 2023. J.P. Morgan's comparable figure is $697B for the five largest, revised up $173B during the year. Company guidance: Microsoft ~$190B, Alphabet $180–190B, Meta $125–145B. Roughly $25B of Microsoft's and part of Meta's increase is component price inflation rather than more capacity.",
-        "disputed": "Scope label is wrong. The source covers FOUR companies and excludes Oracle explicitly, not five. Oracle alone is running about $56B a year, so a genuine five-company 2026 figure would be materially above $725B. See https://valueaddvc.com/blog/ai-hyperscaler-capex-compared-why-microsoft-google-meta-and-amazon-are-all-spending-at-once"
+        "source": "ValueAdd VC, from company guidance",
+        "source_url": "https://valueaddvc.com/blog/ai-hyperscaler-capex-compared-why-microsoft-google-meta-and-amazon-are-all-spending-at-once",
+        "note": "Microsoft about $190B, Alphabet $195B to $205B, Amazon about $200B, Meta $125B to $145B. Up 4.9 times from $148.1B in 2023, which is a like-for-like multiple because both years are four-company. Roughly $25B of Microsoft's increase, and part of Meta's, is component price inflation rather than more capacity.",
+        "scope": "Four companies: Microsoft, Alphabet, Amazon, Meta. Oracle excluded.",
+        "alternatives": [
+          {
+            "value": 770,
+            "unit": "USD_billions",
+            "scope": "Five companies, adding Oracle.",
+            "basis": "Trend extrapolation",
+            "source": "Epoch AI",
+            "source_url": "https://epoch.ai/data-insights/hyperscaler-capex-trend",
+            "confidence": "projection"
+          },
+          {
+            "value": 697,
+            "unit": "USD_billions",
+            "scope": "Five largest.",
+            "basis": "Comparable estimate",
+            "source": "J.P. Morgan",
+            "source_url": "https://valueaddvc.com/blog/ai-hyperscaler-capex-compared-why-microsoft-google-meta-and-amazon-are-all-spending-at-once",
+            "confidence": "estimate"
+          }
+        ]
       }
     ],
     "history": {
@@ -469,7 +489,9 @@
             "period": "2025-Q3",
             "value": 42.6
           }
-        ]
+        ],
+        "as_of": "2025-Q3",
+        "as_of_note": "Latest of the two quarters compared."
       }
     }
   },

@@ -347,10 +347,14 @@ function hatched(c) { return c && c !== "reported" ? "1" : "0"; }
 /* A value missing as_of or source_url must render a visible warning rather
    than rendering clean. Failing loudly is the whole point: a figure with no
    date attached is a figure nobody can check later. */
-function contractGaps(o) {
+function contractGaps(o, container) {
   var missing = [];
   if (!o) return ["no value"];
-  if (o.value === null || o.value === undefined) missing.push("value");
+  // Container objects carry provenance for a group of figures held under their
+  // own keys, so they have no single `value` and demanding one would flag them
+  // every render. A warning that fires on correct data teaches readers to
+  // ignore it, which costs more than the check is worth.
+  if (!container && (o.value === null || o.value === undefined)) missing.push("value");
   if (!o.as_of) missing.push("date");
   if (!o.source_url) missing.push("source");
   return missing;
@@ -368,9 +372,9 @@ function chip(o) {
 
 /* Provenance line: when it was true, where it came from, and, when a machine
    refreshed it, which endpoint actually produced the number now on screen. */
-function prov(o) {
+function prov(o, container) {
   if (!o) return "";
-  var gaps = contractGaps(o);
+  var gaps = contractGaps(o, container);
   var bits = [];
   if (o.as_of) bits.push(esc(o.as_of));
   if (o.source_url) {
@@ -391,6 +395,27 @@ function prov(o) {
     out += ' <span class="warn" title="' + esc(o.disputed) + '">disputed</span>';
   }
   return out;
+}
+
+/* Scope is not decoration on these figures. A capex total for four companies
+   and one for five differ by tens of billions, and that difference has been
+   mistaken for growth often enough that it belongs next to the number. */
+function scopeNote(o) {
+  return o && o.scope ? '<div class="prov"><b>Scope:</b> ' + esc(o.scope) + "</div>" : "";
+}
+
+/* Other bases for the same quantity, where the difference is definitional
+   rather than a disagreement about fact. Shown so a reader meeting a different
+   number elsewhere can see why it differs instead of assuming one is wrong. */
+function alternatives(o) {
+  if (!o || !o.alternatives || !o.alternatives.length) return "";
+  return '<div class="prov"><b>On other bases:</b><ul style="margin:4px 0 0;padding-left:18px">' +
+    o.alternatives.map(function (a) {
+      return "<li>" + esc(money(a.value, a.unit)) + " &mdash; " + esc(a.scope) +
+        (a.basis ? " " + esc(a.basis) + "." : "") +
+        (a.source_url ? ' <a href="' + esc(a.source_url) + '" rel="noopener">' +
+          esc(a.source || "source") + "</a>" : esc(a.source ? " " + a.source : "")) + "</li>";
+    }).join("") + "</ul></div>";
 }
 
 /* ---------------- prose interpolation ---------------- */
@@ -822,7 +847,8 @@ function measuresSection() {
        ["Same measure, 2021", money(14, "USD_billions")]]) +
     measureCard(confVar("estimate"), "B. Plus signed commitments",
       val(T.leases),
-      "Lease obligations signed but not yet commenced, excluded from every funded-debt total<br>" + prov(T.leases),
+      "Lease obligations signed but not yet commenced, excluded from every funded-debt total<br>" +
+        prov(T.leases) + scopeNote(T.capex_2026) + alternatives(T.capex_2026),
       [["Hyperscaler capex, 2026", val(T.capex_2026)],
        ["Capex, 2019", money(69.06, "USD_billions")],
        ["Leases, 2020", money(51.67, "USD_billions")]]) +
@@ -840,10 +866,10 @@ function measuresSection() {
     '<div class="caveat"><p><b>The one clean comparison.</b> ' + esc(clean.note) + " " +
     esc(clean.label) + " went from " + esc(money(clean.points[0].value, clean.unit)) + " in " +
     esc(clean.points[0].period) + " to " + esc(money(clean.points[1].value, clean.unit)) + " in " +
-    esc(clean.points[1].period) + ". " + prov(clean) + "</p></div></div>" +
+    esc(clean.points[1].period) + ". " + prov(clean, true) + "</p></div></div>" +
 
     '<div class="card"><h2>What the conservative measure looks like</h2>' +
-    '<p class="cap">Total debt to EBITDA and estimated funding runway, ' + esc(lev.as_of) + ". " + prov(lev) + "</p>" +
+    '<p class="cap">Total debt to EBITDA and estimated funding runway, ' + esc(lev.as_of) + ". " + prov(lev, true) + "</p>" +
     '<div class="tablewrap"><table><thead><tr><th class="t">Company</th><th>Debt / EBITDA</th>' +
     "<th>Runway, years</th></tr></thead><tbody>" + levRows + "</tbody></table></div>" +
     '<p class="note">' + esc(lev.interpretation) + "</p>" +
@@ -856,7 +882,7 @@ function measuresSection() {
     }).join("") + "</tbody></table></div>" +
     '<p class="note">Securitisation plumbing: a data centre ABS market of roughly ' +
     esc(money(c.securitisation.abs_market_size, c.securitisation.unit)) + " faces eventual take-out needs near " +
-    esc(money(c.securitisation.projected_takeout_need, c.securitisation.unit)) + ". " + prov(c.securitisation) +
+    esc(money(c.securitisation.projected_takeout_need, c.securitisation.unit)) + ". " + prov(c.securitisation, true) +
     "</p></div></section>";
 }
 
@@ -945,7 +971,7 @@ function householdsSection() {
     '<div class="plot"><canvas id="c-hh" height="300" role="img" ' +
     'aria-label="Household debt as a share of GDP for the United States and Canada on the BIS basis, quarterly from 2005. Canada sits far above the United States throughout and the gap widens after 2008."></canvas>' +
     '<div class="tooltip" id="t-hh"></div></div>' +
-    '<p class="note">' + prov(D["household-debt"].comparable_basis) + "</p></div>" +
+    '<p class="note">' + prov(D["household-debt"].comparable_basis, true) + "</p></div>" +
 
     '<div class="tiles">' +
     tile("US debt per person", T.us_debt_per_capita, "Total household debt over population") +
@@ -1040,7 +1066,9 @@ function cyclesSection() {
       "capital spending equals roughly {capex_share_gdp} of American GDP. The 1990s telecom fibre buildout " +
       "peaked at " + T.telecom_share_gdp + ". This buildout is running at about twice that share, reached it " +
       "in about four years rather than five, and is concentrated in fewer than ten companies rather than " +
-      "dozens.") + "</p></div>" +
+      "dozens.") + "</p>" +
+    '<p class="note">' + esc(D.cycles.ai_buildout.capex_by_year_note) + " " + scopeNote(T.capex_2026) +
+    "</p></div>" +
     '<div class="card"><h2>Where the analogy breaks</h2>' +
     '<div class="tablewrap"><table><tbody>' + diffs + "</tbody></table></div>" +
     '<h3>What would actually tell you</h3>' +
@@ -1281,7 +1309,7 @@ function tokens() {
     private_credit: aiItem("measure_c_off_balance_sheet", "private_credit_ai_loans"),
     financing_gap: aiItem("measure_c_off_balance_sheet", "ms_financing_gap"),
     bank_exposure: aiItem("measure_c_off_balance_sheet", "bank_ai_exposure"),
-    capex_share_gdp: D.cycles.ai_buildout.capex_share_of_us_gdp_2026,
+    capex_share_gdp: null,   // derived below, never stored
     telecom_peak: { value: D.cycles.telecom_buildout.peak_annual_capex.value, unit: "USD_billions" }
   };
   if (S && S.derived) {
@@ -1290,6 +1318,16 @@ function tokens() {
   }
   // Derived comparisons, computed rather than asserted, so they cannot drift.
   var obsT = toTrillions(t.obs_nine), usG = t.us_gdp && t.us_gdp.value, caG = t.ca_gdp && t.ca_gdp.value;
+  // Capex against GDP is recomputed here rather than stored. Both sides are on
+  // the four-company basis, so the ratio cannot silently end up comparing a
+  // four-company numerator with a five-company one, which is exactly how the
+  // stored version went wrong.
+  var capexB = t.capex_2026 && t.capex_2026.value;
+  if (capexB && usG) {
+    t.capex_share_gdp = { value: +(capexB / (usG * 1000) * 100).toFixed(2), unit: "percent",
+      confidence: "estimate", as_of: t.capex_2026.as_of,
+      source: "Derived from hyperscaler capex over US nominal GDP", source_url: "" };
+  }
   if (obsT && usG) t.obs_vs_us_gdp = { value: +(obsT / usG * 100).toFixed(1), unit: "percent" };
   if (obsT && caG) t.obs_vs_ca_gdp = { value: Math.round(obsT / caG * 100), unit: "percent" };
   var tp = D.cycles.telecom_buildout.peak_capex_share_of_gdp.value_range;

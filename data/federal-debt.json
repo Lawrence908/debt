@@ -151,7 +151,9 @@
       "confidence": "projection",
       "source": "CBO, The Budget and Economic Outlook 2026–2036",
       "source_url": "https://www.cbo.gov/publication/62105",
-      "note": "From 101% in 2026. Surpasses the 1946 record of 106%."
+      "note": "From 101% in 2026. Surpasses the 1946 record of 106%.",
+      "as_of": "2026",
+      "as_of_note": "Vintage of the projection, not its target year: the CBO outlook covering 2026 to 2036."
     },
     {
       "id": "jpm_adjusted_2036",
@@ -161,7 +163,9 @@
       "confidence": "projection",
       "source": "J.P. Morgan Asset Management",
       "source_url": "https://am.jpmorgan.com/us/en/asset-management/adv/insights/market-insights/market-updates/notes-on-the-week-ahead/five-scenarios-for-the-federal-debt/",
-      "note": "JPM describes even this as probably optimistic — it assumes no further tax cuts and no additional defence spending."
+      "note": "JPM describes even this as probably optimistic — it assumes no further tax cuts and no additional defence spending.",
+      "as_of": "2026",
+      "as_of_note": "Vintage of the projection, not its target year."
     },
     {
       "id": "pwbm_ceiling",
@@ -171,7 +175,9 @@
       "confidence": "projection",
       "source": "Penn Wharton Budget Model, June 2026",
       "source_url": "https://budgetmodel.wharton.upenn.edu/p/2026-06-02-when-does-federal-debt-reach-unsustainable-levels/",
-      "note": "A modelled ceiling, not a forecast. PWBM notes markets can unravel earlier if beliefs about repayment shift — the binding constraint is expectations, not arithmetic."
+      "note": "A modelled ceiling, not a forecast. PWBM notes markets can unravel earlier if beliefs about repayment shift — the binding constraint is expectations, not arithmetic.",
+      "as_of": "2026-06",
+      "as_of_note": "Vintage of the modelled ceiling."
     }
   ],
   "definitional_note_tokens": "Figures are interpolated at render from the series below, so this sentence cannot drift from the values it describes."

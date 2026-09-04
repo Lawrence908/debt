@@ -195,6 +195,8 @@
     "ca_series": "HDTGPDCAQ163N",
     "source": "Bank for International Settlements via FRED",
     "source_url": "https://fred.stlouisfed.org/series/HDTGPDCAQ163N",
-    "confidence": "reported"
+    "confidence": "reported",
+    "as_of": "2026-Q1",
+    "as_of_note": "Latest Canadian observation. The US BIS series lags a further three quarters, to 2025-Q2, so the two lines end at different points and the chart leaves the difference as a gap rather than extending either."
   }
 }
