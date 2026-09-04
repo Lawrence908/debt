@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-09-04T20:34:17.723962+00:00",
+  "last_run": "2026-09-04T21:50:31.619120+00:00",
   "last_error": null,
   "failures": 0,
   "results": [
@@ -7,13 +7,13 @@
       "key": "us_total_public_debt",
       "file": "federal-debt.json",
       "label": "Total public debt outstanding",
-      "before": 39.89,
+      "before": 40.102964,
       "after": 40.102964,
-      "as_of_before": "2026-Q2",
+      "as_of_before": "2026-Q3",
       "as_of_after": "2026-Q3",
-      "change_pct": 0.534,
-      "action": "written",
-      "observed_at": "2026-09-04T20:34:17.182217+00:00"
+      "change_pct": 0.0,
+      "action": "unchanged",
+      "observed_at": "2026-09-04T21:50:30.827271+00:00"
     },
     {
       "key": "us_debt_to_gdp_total",
@@ -26,19 +26,19 @@
       "change_pct": 0.168,
       "action": "stale-upstream",
       "reason": "upstream is at 2026-Q1, behind the stored 2026-Q2; stored value kept",
-      "observed_at": "2026-09-04T20:34:17.452567+00:00"
+      "observed_at": "2026-09-04T21:50:31.259981+00:00"
     },
     {
       "key": "us_gdp_nominal",
       "file": "gdp.json",
       "label": "United States nominal GDP",
-      "before": 32.48,
+      "before": 32.486066,
       "after": 32.486066,
       "as_of_before": "2026-Q2",
       "as_of_after": "2026-Q2",
-      "change_pct": 0.019,
-      "action": "written",
-      "observed_at": "2026-09-04T20:34:17.709943+00:00"
+      "change_pct": 0.0,
+      "action": "unchanged",
+      "observed_at": "2026-09-04T21:50:31.618159+00:00"
     }
   ]
 }

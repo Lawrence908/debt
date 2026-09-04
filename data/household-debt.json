@@ -2,7 +2,6 @@
   "series_group": "household_debt",
   "update_cadence": "Quarterly. NY Fed releases roughly six weeks after quarter end; StatCan National Balance Sheet Accounts roughly ten weeks after.",
   "comparability_warning": "The US and Canadian headline numbers are not measuring the same thing. The NY Fed figure comes from a credit bureau panel and counts balances on specific product types. StatCan's credit market debt comes from the national accounts and is a broader institutional aggregate. The debt-to-GDP comparison below is the closest to apples-to-apples; the debt-to-disposable-income ratio is the one Canadians usually quote and has no exact US equivalent in common use.",
-
   "united_states": {
     "total_debt": {
       "value": 18.794,
@@ -22,12 +21,44 @@
       "source_url": "https://thehub.ca/2026/04/20/at-103-percent-of-gdp-canadian-households-have-the-most-debt-in-the-g7/"
     },
     "composition": [
-      { "category": "Mortgages", "value": 13.1, "unit": "USD_trillions", "change_qoq": -0.074, "note": "Declined $74B in the quarter." },
-      { "category": "Auto loans", "value": 1.71, "unit": "USD_trillions", "change_qoq": 0.028 },
-      { "category": "Student loans", "value": 1.65, "unit": "USD_trillions", "change_qoq": -0.007 },
-      { "category": "Credit cards", "value": 1.26, "unit": "USD_trillions", "change_qoq": 0.021 },
-      { "category": "HELOC", "value": 0.459, "unit": "USD_trillions", "change_qoq": 0.013, "note": "Up roughly 35% from the Q1 2022 trough — homeowners tapping equity rather than refinancing into higher rates." },
-      { "category": "Other", "value": 0.568, "unit": "USD_trillions", "note": "Personal loans and retailer financing. Roughly $316B below its record." }
+      {
+        "category": "Mortgages",
+        "value": 13.1,
+        "unit": "USD_trillions",
+        "change_qoq": -0.074,
+        "note": "Declined $74B in the quarter."
+      },
+      {
+        "category": "Auto loans",
+        "value": 1.71,
+        "unit": "USD_trillions",
+        "change_qoq": 0.028
+      },
+      {
+        "category": "Student loans",
+        "value": 1.65,
+        "unit": "USD_trillions",
+        "change_qoq": -0.007
+      },
+      {
+        "category": "Credit cards",
+        "value": 1.26,
+        "unit": "USD_trillions",
+        "change_qoq": 0.021
+      },
+      {
+        "category": "HELOC",
+        "value": 0.459,
+        "unit": "USD_trillions",
+        "change_qoq": 0.013,
+        "note": "Up roughly 35% from the Q1 2022 trough — homeowners tapping equity rather than refinancing into higher rates."
+      },
+      {
+        "category": "Other",
+        "value": 0.568,
+        "unit": "USD_trillions",
+        "note": "Personal loans and retailer financing. Roughly $316B below its record."
+      }
     ],
     "delinquency": {
       "share_of_balances_delinquent": 4.7,
@@ -38,11 +69,35 @@
       "measurement_change": "From 2026-Q1 the NY Fed report uses VantageScore 4.0; earlier reports used Equifax Risk Score 3.0. Credit score series are not continuous across that break."
     },
     "per_household": [
-      { "metric": "Average credit card balance", "value": 10448, "unit": "USD", "as_of": "2026-Q2", "confidence": "estimate", "source": "WalletHub, inflation-adjusted to June 2026 CPI", "source_url": "https://wallethub.com/edu/d/household-debt-report/120725", "note": "$1,332 below the record." },
-      { "metric": "Average 'other' debt balance", "value": 4699, "unit": "USD", "as_of": "2026-Q2", "confidence": "estimate", "note": "Roughly 41% below the all-time record." }
-    ]
+      {
+        "metric": "Average credit card balance",
+        "value": 10448,
+        "unit": "USD",
+        "as_of": "2026-Q2",
+        "confidence": "estimate",
+        "source": "WalletHub, inflation-adjusted to June 2026 CPI",
+        "source_url": "https://wallethub.com/edu/d/household-debt-report/120725",
+        "note": "$1,332 below the record."
+      },
+      {
+        "metric": "Average 'other' debt balance",
+        "value": 4699,
+        "unit": "USD",
+        "as_of": "2026-Q2",
+        "confidence": "estimate",
+        "note": "Roughly 41% below the all-time record."
+      }
+    ],
+    "debt_service_ratio": {
+      "value": 11.164138,
+      "unit": "percent",
+      "as_of": "2026-Q1",
+      "confidence": "reported",
+      "source": "Federal Reserve, household debt service payments as a share of disposable personal income",
+      "source_url": "https://fred.stlouisfed.org/series/TDSP",
+      "note": "The direct US counterpart to StatCan's debt service ratio, which the page previously had no equivalent for. Canada's stands at 14.75 percent on the same concept."
+    }
   },
-
   "canada": {
     "total_credit_market_debt": {
       "value": 3253.4,
@@ -62,9 +117,18 @@
       "source_url": "https://www150.statcan.gc.ca/n1/daily-quotidien/260612/dq260612a-eng.htm",
       "note": "Record high, sixth consecutive quarterly increase, up 0.9pp. Roughly $1.80 of debt per dollar of after-tax income. This is an aggregate ratio, not a per-household one — it does not mean a typical household owes $1.80 per dollar earned.",
       "history": [
-        { "period": "2020-Q1", "value": 176.9 },
-        { "period": "2025-Q4", "value": 177.2 },
-        { "period": "2026-Q1", "value": 179.6 }
+        {
+          "period": "2020-Q1",
+          "value": 176.9
+        },
+        {
+          "period": "2025-Q4",
+          "value": 177.2
+        },
+        {
+          "period": "2026-Q1",
+          "value": 179.6
+        }
       ],
       "conflicting_source": "Trading Economics reports 174.9% on a different basis. StatCan's own release is authoritative for this series."
     },
@@ -77,9 +141,18 @@
       "source_url": "https://www150.statcan.gc.ca/n1/daily-quotidien/260612/dq260612a-eng.htm",
       "note": "Up from 14.68% in Q4 2025 and 14.57% a quarter before that. Principal and interest as a share of disposable income — close to one dollar in seven committed before any spending.",
       "history": [
-        { "period": "2025-Q3", "value": 14.61 },
-        { "period": "2025-Q4", "value": 14.68 },
-        { "period": "2026-Q1", "value": 14.75 }
+        {
+          "period": "2025-Q3",
+          "value": 14.61
+        },
+        {
+          "period": "2025-Q4",
+          "value": 14.68
+        },
+        {
+          "period": "2026-Q1",
+          "value": 14.75
+        }
       ]
     },
     "debt_to_gdp": {
@@ -99,9 +172,29 @@
       "note": "Up from $34.5B in Q4 2025. Net mortgage originations fell to $22.6B, the steepest quarterly pullback since late 2023, but consumer credit and non-mortgage borrowing more than offset it. The composition shift matters: unsecured borrowing is replacing secured."
     },
     "net_worth_context": {
-      "household_net_worth": { "value": 18.6, "unit": "CAD_trillions", "as_of": "2026-Q1", "note": "Up 1.3% in the quarter." },
-      "debt_as_share_of_net_worth": { "value": 17.4, "unit": "percent" },
-      "wealth_concentration": { "value": 65.7, "unit": "percent", "note": "Share of total net worth held by the wealthiest 20% of households. The aggregate debt-to-net-worth ratio is reassuring only if debt and assets sit with the same households, and they largely do not." }
+      "household_net_worth": {
+        "value": 18.6,
+        "unit": "CAD_trillions",
+        "as_of": "2026-Q1",
+        "note": "Up 1.3% in the quarter."
+      },
+      "debt_as_share_of_net_worth": {
+        "value": 17.4,
+        "unit": "percent"
+      },
+      "wealth_concentration": {
+        "value": 65.7,
+        "unit": "percent",
+        "note": "Share of total net worth held by the wealthiest 20% of households. The aggregate debt-to-net-worth ratio is reassuring only if debt and assets sit with the same households, and they largely do not."
+      }
     }
+  },
+  "comparable_basis": {
+    "note": "The headline US and Canadian figures come from structurally different collections, which is why the warning above exists. BIS publishes both countries on one methodology, quarterly, and that pair is what the chart draws. The two bases disagree: BIS puts US household debt near 68 percent of GDP and Canada near 96, against the 76 and 103 cited here. Neither is wrong. They are different questions, and the page shows both rather than picking the tidier one.",
+    "us_series": "HDTGPDUSQ163N",
+    "ca_series": "HDTGPDCAQ163N",
+    "source": "Bank for International Settlements via FRED",
+    "source_url": "https://fred.stlouisfed.org/series/HDTGPDCAQ163N",
+    "confidence": "reported"
   }
 }

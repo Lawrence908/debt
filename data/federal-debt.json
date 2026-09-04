@@ -1,7 +1,7 @@
 {
   "series_group": "federal_debt",
   "update_cadence": "Debt level: daily via Treasury Debt to the Penny. Ratio: quarterly, gated on BEA GDP.",
-  "definitional_note": "Two different numbers get called 'the national debt'. Total public debt outstanding (~$39.9T) includes intragovernmental holdings — money the government owes itself, mostly trust funds. Debt held by the public (~$32T) excludes those. CBO and most economists use debt held by the public. Cable news usually quotes total. They differ by about 24 percentage points of GDP, which is larger than most countries' entire debt load.",
+  "definitional_note": "Two different numbers get called 'the national debt'. Total public debt outstanding ({us_total_public_debt}) includes intragovernmental holdings, money the government owes itself, mostly trust funds. Debt held by the public ({us_debt_held_by_public}) excludes those. CBO and most economists use debt held by the public; cable news usually quotes total. They differ by more than 20 percentage points of GDP, which is larger than most countries' entire debt load.",
   "series": [
     {
       "id": "us_total_public_debt",
@@ -173,5 +173,6 @@
       "source_url": "https://budgetmodel.wharton.upenn.edu/p/2026-06-02-when-does-federal-debt-reach-unsustainable-levels/",
       "note": "A modelled ceiling, not a forecast. PWBM notes markets can unravel earlier if beliefs about repayment shift — the binding constraint is expectations, not arithmetic."
     }
-  ]
+  ],
+  "definitional_note_tokens": "Figures are interpolated at render from the series below, so this sentence cannot drift from the values it describes."
 }

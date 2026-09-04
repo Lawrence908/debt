@@ -29,7 +29,8 @@
       "confidence": "estimate",
       "source": "IMF, via Worldometer",
       "source_url": "https://www.worldometers.info/gdp/canada-gdp/",
-      "note": "IMF full-year 2026 figure at market exchange rates. A separate Wikipedia compilation gives 2.42T for the same year, so treat the first two significant figures as solid and the third as soft. Currency conversion is doing real work here — a 5% CAD move changes this more than a year of growth does."
+      "note": "IMF full-year 2026 figure at market exchange rates. A separate Wikipedia compilation gives 2.42T for the same year, so treat the first two significant figures as solid and the third as soft. Currency conversion is doing real work here — a 5% CAD move changes this more than a year of growth does.",
+      "disputed": "The World Bank puts Canadian nominal GDP at $2.32T for 2025 (FRED MKTGDPCAA646NWDB) against this IMF-basis $2.51T for 2026. Part of the gap is the year, part is the exchange-rate assumption. Treat the first two significant figures as solid."
     },
     {
       "id": "ca_gdp_per_capita",
@@ -53,5 +54,16 @@
       "source_url": "",
       "note": "Derived. Kept here so the page never recomputes a ratio silently."
     }
-  ]
+  ],
+  "fx_cad_usd": {
+    "value": 0.7197,
+    "unit": "ratio",
+    "as_of": "2026-08-28",
+    "confidence": "reported",
+    "source": "FRED DEXCAUS, inverted",
+    "source_url": "https://fred.stlouisfed.org/series/DEXCAUS",
+    "note": "US dollars per Canadian dollar. Lifted out of the page script, where it was a bare constant, because currency conversion does real work here: a 5 percent move in the Canadian dollar shifts the Canada bars more than a year of real growth does. Every converted figure on the page states the rate that produced it.",
+    "inverse": 1.3895,
+    "inverse_note": "DEXCAUS is published as Canadian dollars per US dollar."
+  }
 }

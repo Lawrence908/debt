@@ -55,6 +55,13 @@
       "label": "This file",
       "cadence": "on schema change",
       "automatable": "no"
+    },
+    {
+      "file": "series.json",
+      "label": "Machine-fetched long time series",
+      "cadence": "daily",
+      "automatable": "yes",
+      "note": "Thirteen FRED series, about 2,900 observations. Rewritten wholesale by the updater and never hand-edited, which is why it is kept out of the curated set."
     }
   ],
   "staleness": {
@@ -75,7 +82,13 @@
       "value",
       "as_of"
     ],
-    "note": "A fetched value differing from the stored one by more than max_change_percent is logged and not written. These series do not move that fast, so a large jump means an API change, a units change, or a bad parse. The updater never creates a value; a new series is a human decision."
+    "note": "A fetched value differing from the stored one by more than max_change_percent is logged and not written. These series do not move that fast, so a large jump means an API change, a units change, or a bad parse. The updater never creates a value; a new series is a human decision.",
+    "guardrails": [
+      "Existing values only. The updater cannot create a series.",
+      "Only value and as_of are written; source, source_url, confidence, unit and note survive.",
+      "A change beyond max_change_percent is refused and logged.",
+      "as_of never moves backwards, so a lagging upstream cannot downgrade a fresher derived figure."
+    ]
   },
   "api_hooks": {
     "treasury_debt_to_the_penny": {
@@ -123,6 +136,17 @@
   "fred_series": {
     "GFDEGDQ188S": "Total public debt as percent of GDP, quarterly",
     "GDP": "US nominal gross domestic product, quarterly, billions of dollars",
-    "GFDEBTN": "Total public debt outstanding, quarterly, millions of dollars"
+    "GFDEBTN": "Total public debt outstanding, quarterly, millions of dollars",
+    "HDTGPDUSQ163N": "US household debt as percent of GDP, BIS basis",
+    "HDTGPDCAQ163N": "Canada household debt as percent of GDP, BIS basis",
+    "TDSP": "US household debt service ratio",
+    "CDSP": "US consumer debt service ratio",
+    "BCNSDODNS": "US nonfinancial corporate debt securities and loans",
+    "FYGFGDQ188S": "US debt held by the public as percent of GDP",
+    "A091RC1Q027SBEA": "US federal interest payments",
+    "POPTHM": "US population, monthly",
+    "POPTOTCAA647NWDB": "Canada population, annual",
+    "MKTGDPCAA646NWDB": "Canada nominal GDP, annual",
+    "DEXCAUS": "Canadian dollars per US dollar, daily"
   }
 }

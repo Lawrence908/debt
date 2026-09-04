@@ -174,6 +174,16 @@ canvas { display: block; width: 100%; touch-action: pan-y; }
 @keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .scale-val { font-variant-numeric: tabular-nums; font-size: 0.9rem; white-space: nowrap; }
 
+/* Narrow screens: the label and value columns leave the track almost no room,
+   so even the largest bar renders as a stub. Stack instead, and let the track
+   have the full width. */
+@media (max-width: 640px) {
+  .scale-row { grid-template-columns: 1fr auto; gap: 4px 12px; }
+  .scale-label { grid-column: 1; }
+  .scale-val { grid-column: 2; align-self: center; }
+  .scale-track { grid-column: 1 / -1; height: 14px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .scale-bar { animation: none; }
   .tooltip { transition: none; }
@@ -303,7 +313,1029 @@ function esc(s) {
     });
 }
 
+/* ---------------- formatting ---------------- */
+
+function commas(n) { return n.toLocaleString("en-US"); }
+
+function money(v, unit) {
+  if (v === null || v === undefined || !isFinite(v)) return "n/a";
+  if (unit === "USD_trillions") return "$" + (v >= 10 ? v.toFixed(1) : v.toFixed(2)) + "T";
+  if (unit === "CAD_trillions") return "C$" + (v >= 10 ? v.toFixed(1) : v.toFixed(2)) + "T";
+  if (unit === "USD_billions") return "$" + (v >= 100 ? commas(Math.round(v)) : v) + "B";
+  if (unit === "CAD_billions") return "C$" + commas(Math.round(v)) + "B";
+  if (unit === "CAD_billions_per_quarter") return "C$" + v + "B";
+  if (unit === "USD_billions_per_month") return "$" + v + "B/month";
+  if (unit === "USD_millions") return "$" + (v / 1e6 >= 1 ? (v / 1e6).toFixed(2) + "T" : commas(Math.round(v)) + "M");
+  if (unit === "percent" || unit === "percent_of_gdp") return v + "%";
+  if (unit === "USD") return "$" + commas(Math.round(v));
+  if (unit === "CAD") return "C$" + commas(Math.round(v));
+  if (unit === "ratio") return v + "×";
+  if (unit === "thousands") return commas(Math.round(v)) + "k";
+  return String(v);
+}
+
+/* Trillions is the only axis on which the three debt worlds are comparable,
+   so billions-denominated figures get converted rather than compared raw. */
+function toTrillions(o) {
+  if (!o || typeof o.value !== "number") return null;
+  var u = o.unit;
+  if (u === "USD_trillions") return o.value;
+  if (u === "USD_billions") return o.value / 1000;
+  if (u === "CAD_trillions") return o.value * fx();
+  if (u === "CAD_billions") return o.value / 1000 * fx();
+  return null;
+}
+
+/* ---------------- the five-field contract ---------------- */
+
+var CONF = { reported: "--c-reported", estimate: "--c-estimate", projection: "--c-projection" };
+
+function confVar(c) { return "var(" + (CONF[c] || "--muted") + ")"; }
+function hatched(c) { return c && c !== "reported" ? "1" : "0"; }
+
+/* A value missing as_of or source_url must render a visible warning rather
+   than rendering clean. Failing loudly is the whole point: a figure with no
+   date attached is a figure nobody can check later. */
+function contractGaps(o) {
+  var missing = [];
+  if (!o) return ["no value"];
+  if (o.value === null || o.value === undefined) missing.push("value");
+  if (!o.as_of) missing.push("date");
+  if (!o.source_url) missing.push("source");
+  return missing;
+}
+
+function val(o) {
+  return o ? esc(money(o.value, o.unit)) : "n/a";
+}
+
+function chip(o) {
+  if (!o || !o.confidence) return "";
+  return '<span class="chip" data-hatch="' + hatched(o.confidence) +
+    '" style="--c:' + confVar(o.confidence) + '">' + esc(o.confidence) + "</span>";
+}
+
+/* Provenance line: when it was true, where it came from, and, when a machine
+   refreshed it, which endpoint actually produced the number now on screen. */
+function prov(o) {
+  if (!o) return "";
+  var gaps = contractGaps(o);
+  var bits = [];
+  if (o.as_of) bits.push(esc(o.as_of));
+  if (o.source_url) {
+    bits.push('<a href="' + esc(o.source_url) + '" rel="noopener">' + esc(o.source || "source") + "</a>");
+  } else if (o.source) {
+    bits.push(esc(o.source));
+  }
+  if (o.updated_by && o.updated_by.source_url) {
+    bits.push('refreshed from <a href="' + esc(o.updated_by.source_url) + '" rel="noopener">' +
+      esc(o.updated_by.source) + "</a> on " + esc(o.updated_by.at));
+  }
+  var out = '<span class="prov">' + bits.join(" · ") + "</span>";
+  if (gaps.length) {
+    out += ' <span class="warn" title="This figure is missing ' + esc(gaps.join(" and ")) +
+      '. It is shown so the gap is visible rather than hidden.">missing ' + esc(gaps.join(" + ")) + "</span>";
+  }
+  if (o.disputed) {
+    out += ' <span class="warn" title="' + esc(o.disputed) + '">disputed</span>';
+  }
+  return out;
+}
+
+/* ---------------- prose interpolation ---------------- */
+
+/* Sentences state figures by token, never by literal. "{us_gdp} of output"
+   renders the current value and cannot drift from it. Tokens resolve against
+   the registry built in tokens(); an unknown token renders visibly rather
+   than silently vanishing, so a typo surfaces on the page. */
+function interp(text) {
+  if (!text) return "";
+  return esc(text).replace(/\{([a-z0-9_.]+)\}/gi, function (whole, key) {
+    var o = T[key];
+    if (o === undefined) return '<span class="warn">' + esc(key) + "?</span>";
+    if (typeof o === "string") return o;
+    return "<b>" + esc(money(o.value, o.unit)) + "</b>";
+  });
+}
+
+var T = {};
+
+function fed(id) {
+  var list = D["federal-debt"].series, i;
+  for (i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+  return null;
+}
+function gdpS(id) {
+  var list = D.gdp.series, i;
+  for (i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+  return null;
+}
+function aiItem(measure, id) {
+  var list = D["ai-capital"][measure].items, i;
+  for (i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+  return null;
+}
+
+function fx() {
+  var f = D.gdp.fx_cad_usd;
+  return f && f.value ? f.value : 1;
+}
+
+/* ---------------- chart ---------------- */
+
+/* 1-2-2.5-5-10 nice numbers, so an axis lands on readable values. */
+function niceTicks(lo, hi, target) {
+  var span = hi - lo;
+  if (!(span > 0)) return [lo];
+  var raw = span / Math.max(1, target);
+  var mag = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10));
+  var norm = raw / mag, step;
+  if (norm <= 1) step = 1; else if (norm <= 2) step = 2;
+  else if (norm <= 2.5) step = 2.5; else if (norm <= 5) step = 5; else step = 10;
+  step *= mag;
+  var out = [], v = Math.ceil(lo / step) * step;
+  for (; v <= hi + step * 0.001; v += step) out.push(Math.round(v / step) * step);
+  return out;
+}
+
+function Chart(canvasId, tooltipId, opts) {
+  this.canvas = document.getElementById(canvasId);
+  this.tip = document.getElementById(tooltipId);
+  this.opts = opts || {};
+  this.hover = null;
+  this.xs = [];
+  this.series = [];
+  var self = this;
+  this.canvas.addEventListener("mousemove", function (e) { self.onMove(e.clientX); });
+  this.canvas.addEventListener("mouseleave", function () { self.clearHover(); });
+  this.canvas.addEventListener("touchmove", function (e) {
+    if (e.touches[0]) self.onMove(e.touches[0].clientX);
+  }, { passive: true });
+  this.canvas.addEventListener("touchend", function () { self.clearHover(); });
+  charts.push(this);
+}
+
+Chart.prototype.clearHover = function () {
+  this.hover = null;
+  this.tip.style.opacity = 0;
+  this.draw();
+};
+
+Chart.prototype.setData = function (xs, series) {
+  this.xs = xs || [];
+  this.series = series || [];
+  this.hover = null;
+  this.draw();
+};
+
+Chart.prototype.draw = function () {
+  var cv = this.canvas, ctx = cv.getContext("2d");
+  var dpr = window.devicePixelRatio || 1;
+  var w = cv.clientWidth, h = parseInt(cv.getAttribute("height"), 10);
+  if (!w) return;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  cv.style.height = h + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  if (!this.xs.length || !this.series.length) return;
+
+  var muted = css("--muted"), grid = css("--grid"), axis = css("--axis"), surface = css("--surface-1");
+  var pad = { l: this.opts.padLeft || 54, r: 14, t: 12, b: 28 };
+  var g = { left: pad.l, right: w - pad.r, top: pad.t, bottom: h - pad.b };
+  this.geom = g;
+
+  var i, j, v, lo = Infinity, hi = -Infinity;
+  for (i = 0; i < this.series.length; i++) {
+    for (j = 0; j < this.series[i].values.length; j++) {
+      v = this.series[i].values[j];
+      if (v === null || !isFinite(v)) continue;
+      if (v < lo) lo = v; if (v > hi) hi = v;
+    }
+  }
+  var refs = this.opts.refs || [];
+  for (i = 0; i < refs.length; i++) { if (refs[i].y > hi) hi = refs[i].y; if (refs[i].y < lo) lo = refs[i].y; }
+  if (!isFinite(lo)) return;
+  if (this.opts.includeZero !== false) lo = Math.min(0, lo);
+  var padY = (hi - lo) * 0.08 || 1;
+  hi += padY; if (lo < 0 || this.opts.includeZero === false) lo -= padY;
+
+  var X = function (k) {
+    return g.left + (k / Math.max(1, this.xs.length - 1)) * (g.right - g.left);
+  }.bind(this);
+  var Y = function (val) { return g.bottom - ((val - lo) / (hi - lo)) * (g.bottom - g.top); };
+  var unit = this.opts.unit;
+
+  // y grid
+  ctx.font = "11px system-ui, sans-serif";
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  var ticks = niceTicks(lo, hi, 5);
+  for (i = 0; i < ticks.length; i++) {
+    var yy = Math.round(Y(ticks[i])) + 0.5;
+    ctx.strokeStyle = grid; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(g.left, yy); ctx.lineTo(g.right, yy); ctx.stroke();
+    ctx.fillStyle = muted;
+    ctx.fillText(money(ticks[i], unit), g.left - 8, yy);
+  }
+
+  // reference lines, e.g. the 1946 wartime peak
+  for (i = 0; i < refs.length; i++) {
+    var ry = Math.round(Y(refs[i].y)) + 0.5;
+    ctx.strokeStyle = refs[i].color || css("--series-2");
+    ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(g.left, ry); ctx.lineTo(g.right, ry); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.textAlign = "right"; ctx.fillStyle = refs[i].color || css("--series-2");
+    ctx.fillText(refs[i].label, g.right - 4, ry - 8);
+  }
+
+  // x ticks
+  ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.fillStyle = muted;
+  var every = Math.max(1, Math.round(this.xs.length / (w > 700 ? 10 : 5)));
+  for (i = 0; i < this.xs.length; i += every) {
+    ctx.fillText(String(this.xs[i]).slice(0, this.opts.xSlice || 4), X(i), g.bottom + 6);
+  }
+  ctx.strokeStyle = axis; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(g.left, Math.round(g.bottom) + 0.5); ctx.lineTo(g.right, Math.round(g.bottom) + 0.5); ctx.stroke();
+
+  // series
+  ctx.lineJoin = "round"; ctx.lineCap = "round";
+  for (i = 0; i < this.series.length; i++) {
+    var s = this.series[i];
+    if (s.bars) {
+      var bw = Math.max(2, (g.right - g.left) / this.xs.length * 0.6);
+      ctx.fillStyle = s.color;
+      for (j = 0; j < s.values.length; j++) {
+        v = s.values[j];
+        if (v === null || !isFinite(v)) continue;
+        ctx.fillRect(X(j) - bw / 2, Y(v), bw, Y(Math.max(0, lo)) - Y(v));
+      }
+      continue;
+    }
+    ctx.strokeStyle = s.color; ctx.lineWidth = 2;
+    if (s.dashed) ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    var pen = false;
+    for (j = 0; j < s.values.length; j++) {
+      v = s.values[j];
+      // A gap stays a gap. Bridging nulls invents observations.
+      if (v === null || !isFinite(v)) { pen = false; continue; }
+      var xx = X(j), yy2 = Y(v);
+      if (!pen) { ctx.moveTo(xx, yy2); pen = true; } else { ctx.lineTo(xx, yy2); }
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (s.dots) {
+      for (j = 0; j < s.values.length; j++) {
+        v = s.values[j];
+        if (v === null || !isFinite(v)) continue;
+        ctx.fillStyle = s.color;
+        ctx.beginPath(); ctx.arc(X(j), Y(v), 3, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+
+  // crosshair
+  if (this.hover !== null && this.hover < this.xs.length) {
+    var hx = Math.round(X(this.hover)) + 0.5;
+    ctx.strokeStyle = axis; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(hx, g.top); ctx.lineTo(hx, g.bottom); ctx.stroke();
+    ctx.setLineDash([]);
+    for (i = 0; i < this.series.length; i++) {
+      v = this.series[i].values[this.hover];
+      if (v === null || !isFinite(v)) continue;
+      ctx.fillStyle = this.series[i].color;
+      ctx.beginPath(); ctx.arc(X(this.hover), Y(v), 4.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = surface; ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+};
+
+Chart.prototype.onMove = function (clientX) {
+  if (!this.geom || !this.xs.length) return;
+  var rect = this.canvas.getBoundingClientRect();
+  var g = this.geom;
+  var frac = (clientX - rect.left - g.left) / (g.right - g.left);
+  var idx = Math.round(frac * (this.xs.length - 1));
+  idx = Math.max(0, Math.min(this.xs.length - 1, idx));
+  if (idx === this.hover) return;
+  this.hover = idx;
+  this.draw();
+  this.showTip(idx, rect);
+};
+
+Chart.prototype.showTip = function (idx, rect) {
+  var html = '<div class="tdate">' + esc(this.xs[idx]) + "</div>", i, s, v;
+  for (i = 0; i < this.series.length; i++) {
+    s = this.series[i]; v = s.values[idx];
+    html += '<div class="trow"><span class="swatch" style="background:' + s.color + '"></span>' +
+      esc(s.name) + '<span class="tval">' +
+      (v === null || !isFinite(v) ? "no data" : esc(money(v, this.opts.unit))) + "</span></div>";
+  }
+  this.tip.innerHTML = html;
+  this.tip.style.opacity = 1;
+  var g = this.geom;
+  var px = g.left + (idx / Math.max(1, this.xs.length - 1)) * (g.right - g.left);
+  var tw = this.tip.offsetWidth;
+  var left = px + 14;
+  if (left + tw > rect.width - 4) left = px - tw - 14;
+  if (left < 4) left = 4;
+  this.tip.style.left = left + "px";
+  this.tip.style.top = "14px";
+};
+
+/* Every chart is in the registry, so resize and theme changes reach all of
+   them. Diesel misses one on both paths and its colours go stale. */
+function redrawAll() { charts.forEach(function (c) { c.draw(); }); }
+
 /* ---------------- boot ---------------- */
+
+/* ---------------- sections ---------------- */
+
+function daysSince(iso) {
+  if (!iso) return null;
+  return Math.floor((Date.now() - new Date(iso + "T00:00:00Z").getTime()) / 86400000);
+}
+
+function stampLine() {
+  var bits = ["Built " + esc(D.meta.built), "schema " + esc(D.meta.schema_version)];
+  if (S && S.fetched_at) bits.push("series refreshed " + esc(S.fetched_at.slice(0, 10)));
+  var limit = (D.meta.staleness && D.meta.staleness.manual_review_days) || 90;
+  var age = daysSince(D["ai-capital"].last_reviewed);
+  if (age !== null) {
+    var txt = "AI figures reviewed by hand " + age + " days ago";
+    bits.push(age > limit ? '<span class="stale">' + txt + ", past the " + limit + "-day mark</span>" : txt);
+  }
+  return bits.join(" · ");
+}
+
+function tile(label, o, note) {
+  // The tile row exists to be compared across, so a billions-denominated
+  // figure sitting beside trillions is shown on the same axis. The provenance
+  // line still carries the value as its source states it.
+  // Stays inside its own currency: converting a Canadian figure to US dollars
+  // here would change what the number means without the label saying so.
+  var shown = val(o);
+  if (o && (o.unit === "USD_billions" || o.unit === "CAD_billions") && o.value >= 1000) {
+    shown = money(o.value / 1000, o.unit === "USD_billions" ? "USD_trillions" : "CAD_trillions");
+  }
+  return '<div class="tile"><div class="label"><span class="swatch" style="background:' +
+    confVar(o && o.confidence) + '"></span>' + esc(label) + "</div>" +
+    '<div class="value num">' + shown + "</div>" +
+    '<div class="note">' + esc(note || "") + "</div>" +
+    '<div class="note">' + prov(o) + "</div></div>";
+}
+
+function tiles() {
+  return '<div class="tiles">' +
+    tile("US federal debt", T.us_total_public_debt, "Total public debt outstanding") +
+    tile("AI off-book obligations", T.obs_nine, "Nine companies, widest definition") +
+    tile("US household debt", T.us_household, "All households") +
+    tile("Canada household debt", T.ca_household, "Credit market debt") +
+    "</div>";
+}
+
+function keyLine() {
+  return '<div class="legend">' +
+    ["reported", "estimate", "projection"].map(function (c) {
+      return '<span class="item"><span class="swatch" style="height:10px;background:' + confVar(c) +
+        '"></span>' + esc(D.meta.confidence_levels[c]) + "</span>";
+    }).join("") + "</div>";
+}
+
+/* 1. Everything on one axis */
+
+function heroScale() {
+  var rows = [
+    { label: "US federal debt", o: T.us_total_public_debt },
+    { label: "US GDP", o: T.us_gdp, scale: true },
+    { label: "US household debt", o: T.us_household },
+    { label: "AI off-book obligations", o: T.obs_nine },
+    { label: "Canada GDP", o: T.ca_gdp, scale: true },
+    { label: "Canada household debt", o: T.ca_household, converted: true },
+    { label: "AI capex, one year", o: T.capex_2026 },
+    { label: "AI off-book, five companies", o: T.obs_five }
+  ].map(function (r) {
+    r.v = toTrillions(r.o);
+    return r;
+  }).filter(function (r) { return r.v !== null; });
+
+  var max = Math.max.apply(null, rows.map(function (r) { return r.v; }));
+  var bars = rows.map(function (r, i) {
+    var c = r.scale ? "var(--muted)" : confVar(r.o.confidence);
+    return '<div class="scale-row"><div class="scale-label">' + esc(r.label) +
+      "<small>" + esc(r.o.as_of || "") + (r.converted ? ", converted at " + fx() : "") +
+      (r.scale ? ", one year of output" : "") + "</small></div>" +
+      '<div class="scale-track"><div class="scale-bar" data-hatch="' +
+      (r.scale ? "0" : hatched(r.o.confidence)) + '" style="--w:' +
+      (r.v / max * 100).toFixed(2) + "%; --c:" + c + "; animation-delay:" + (i * 55) + 'ms"></div></div>' +
+      '<div class="scale-val num">$' + (r.v >= 10 ? r.v.toFixed(1) : r.v.toFixed(2)) + "T</div></div>";
+  }).join("");
+
+  return '<section><h2>Everything on one axis</h2>' +
+    '<p class="standfirst">Hatched bars are estimates or forward commitments rather than filed figures. ' +
+    'Canadian figures are converted at ' + fx() + " US dollars per Canadian dollar.</p>" +
+    '<div class="card"><div class="scale">' + bars + "</div>" + keyLine() +
+    '<div class="caveat"><p><b>Read the AI-to-GDP comparison carefully.</b> Debt is a stock, a balance owed ' +
+    'at a moment. GDP is a flow, output over a year. Dividing one by the other does not produce a meaningful ' +
+    'economic ratio, and nobody should quote it as a solvency measure.</p>' +
+    "<p>" + interp("It is still a fair sense of scale, so long as it is stated as one. The widest estimate of " +
+      "AI-related off-balance-sheet obligations, {obs_nine} across nine companies, is about {obs_vs_ca_gdp} of " +
+      "one year of Canadian output and about {obs_vs_us_gdp} of one year of American output. That is a picture " +
+      "of magnitude, not of risk.") + "</p>" +
+    "<p>The ratios that do carry meaning, debt against earnings and against cash flow, are in the next section, " +
+    "and they tell a calmer story than the headline scale does.</p></div></div></section>";
+}
+
+/* 2. The three measures */
+
+function seriesRows(hist) {
+  // Union of years across the sub-series, so a gap in one stays a gap.
+  var years = {}, i, j;
+  hist.series.forEach(function (s) {
+    s.points.forEach(function (p) { years[p.year] = 1; });
+  });
+  var xs = Object.keys(years).map(Number).sort(function (a, b) { return a - b; });
+  var out = hist.series.map(function (s) {
+    var by = {};
+    s.points.forEach(function (p) { by[p.year] = p.value; });
+    return { id: s.id, name: s.label, scope: s.scope, values: xs.map(function (y) {
+      return by[y] === undefined ? null : by[y]; }) };
+  });
+  return { xs: xs, series: out };
+}
+
+function measureCard(color, name, headline, sub, rows) {
+  return '<div class="measure" style="--c:' + color + '"><h3>' + esc(name) + "</h3>" +
+    '<div class="headline num">' + headline + "<small>" + sub + "</small></div><ul>" +
+    rows.map(function (r) {
+      return "<li><span>" + esc(r[0]) + "</span><b>" + r[1] + "</b></li>";
+    }).join("") + "</ul></div>";
+}
+
+function measuresSection() {
+  var a = D["ai-capital"].measure_a_balance_sheet;
+  var b = D["ai-capital"].measure_b_commitments;
+  var c = D["ai-capital"].measure_c_off_balance_sheet;
+  var lev = a.leverage_ratios;
+
+  var levRows = lev.companies.map(function (co) {
+    return "<tr><td>" + esc(co.name) + "</td><td>" +
+      (co.value === null ? "not grouped" : co.value.toFixed(1) + "×") + "</td><td>" +
+      co.funding_runway_years.toFixed(1) + "</td></tr>";
+  }).join("");
+
+  // Measure C is shown as labelled bars ordered by definitional breadth, not
+  // as a line. Every point falls inside nine months, yet they span 662 to
+  // 3000. Bank of America and Nikkei cover the identical five companies one
+  // month apart and differ by 39 percent, which rules out both time and
+  // company count. Joining them would chart a disagreement and call it growth.
+  var cpts = c.history.points.slice().sort(function (x, y) { return x.value - y.value; });
+  var cmax = cpts[cpts.length - 1].value;
+  var cbars = cpts.map(function (p) {
+    return '<div class="scale-row"><div class="scale-label">' + esc(p.label) +
+      "<small>" + esc(p.scope) + "</small></div>" +
+      '<div class="scale-track"><div class="scale-bar" data-hatch="' + hatched(p.confidence) +
+      '" style="--w:' + (p.value / cmax * 100).toFixed(1) + "%; --c:" + confVar(p.confidence) + '"></div></div>' +
+      '<div class="scale-val num">' + esc(money(p.value, p.unit)) + "</div></div>";
+  }).join("");
+
+  var clean = c.history.clean_comparison;
+
+  return '<section><h2>"AI debt" is three different numbers</h2>' +
+    '<p class="standfirst">' + esc(D["ai-capital"].measurement_warning) + "</p>" +
+
+    '<div class="card"><h2>The gap between them, over time</h2>' +
+    '<p class="cap">Capital spending and the leases signed against it have both risen far faster than the ' +
+    'bonds issued to fund them. That divergence is the story: the borrowing that shows up as debt is the ' +
+    'smallest of the three lines.</p>' +
+    '<div class="controls"><div class="group" role="group" aria-label="Units">' +
+    '<span class="glabel">Units</span>' +
+    '<button class="seg" data-mflip="abs" aria-pressed="true">Billions</button>' +
+    '<button class="seg" data-mflip="gdp" aria-pressed="false">Share of US GDP</button></div></div>' +
+    '<div id="lg-measures" class="legend"></div>' +
+    '<div class="plot"><canvas id="c-measures" height="320" role="img" ' +
+    'aria-label="Hyperscaler capital expenditure, signed but uncommenced leases, and big tech AI bond issuance, annually from 2019. Capex and leases rise steeply from 2023; issuance stays far lower until 2025."></canvas>' +
+    '<div class="tooltip" id="t-measures"></div></div>' +
+    '<p class="note">' + esc(b.history.note) + " " + esc(a.history.note) + "</p>" +
+    '<details class="fallback"><summary>The same numbers as a table</summary>' +
+    '<div class="tablewrap"><table id="tbl-measures"></table></div></details></div>' +
+
+    '<div class="measures">' +
+    measureCard(confVar("reported"), "A. On the balance sheet",
+      val(T.issuance_2025),
+      interp("Five-hyperscaler bond issuance in 2025, against a 2020 to 2024 average near $28B") +
+        "<br>" + prov(T.issuance_2025),
+      [["Data centre debt issued 2025", val(T.dc_debt_2025)],
+       ["Broad big tech issuance 2025", money(245, "USD_billions")],
+       ["Same measure, 2021", money(14, "USD_billions")]]) +
+    measureCard(confVar("estimate"), "B. Plus signed commitments",
+      val(T.leases),
+      "Lease obligations signed but not yet commenced, excluded from every funded-debt total<br>" + prov(T.leases),
+      [["Hyperscaler capex, 2026", val(T.capex_2026)],
+       ["Capex, 2019", money(69.06, "USD_billions")],
+       ["Leases, 2020", money(51.67, "USD_billions")]]) +
+    measureCard(confVar("estimate"), "C. Plus vehicles they do not consolidate",
+      val(T.obs_nine),
+      "Off-balance-sheet obligations, nine companies, the widest definition in circulation<br>" + prov(T.obs_nine),
+      [["Same measure, five companies", val(T.obs_five)],
+       ["Private credit to AI firms", val(T.private_credit)],
+       ["Capex not covered by cash flow", val(T.financing_gap)]]) +
+    "</div>" +
+
+    '<div class="card"><h2>Measure C, ordered by how much it counts</h2>' +
+    '<p class="cap">' + esc(c.history.why_not) + "</p>" +
+    '<div class="scale">' + cbars + "</div>" +
+    '<div class="caveat"><p><b>The one clean comparison.</b> ' + esc(clean.note) + " " +
+    esc(clean.label) + " went from " + esc(money(clean.points[0].value, clean.unit)) + " in " +
+    esc(clean.points[0].period) + " to " + esc(money(clean.points[1].value, clean.unit)) + " in " +
+    esc(clean.points[1].period) + ". " + prov(clean) + "</p></div></div>" +
+
+    '<div class="card"><h2>What the conservative measure looks like</h2>' +
+    '<p class="cap">Total debt to EBITDA and estimated funding runway, ' + esc(lev.as_of) + ". " + prov(lev) + "</p>" +
+    '<div class="tablewrap"><table><thead><tr><th class="t">Company</th><th>Debt / EBITDA</th>' +
+    "<th>Runway, years</th></tr></thead><tbody>" + levRows + "</tbody></table></div>" +
+    '<p class="note">' + esc(lev.interpretation) + "</p>" +
+    '<h3>The structures themselves</h3>' +
+    '<div class="tablewrap"><table><thead><tr><th class="t">Structure</th><th>Size</th>' +
+    '<th class="t">How it works</th></tr></thead><tbody>' +
+    c.notable_structures.map(function (s) {
+      return '<tr><td>' + esc(s.name) + "</td><td>" + esc(money(s.value, s.unit)) + "</td>" +
+        '<td class="t">' + esc(s.structure) + (s.note ? " " + esc(s.note) : "") + "</td></tr>";
+    }).join("") + "</tbody></table></div>" +
+    '<p class="note">Securitisation plumbing: a data centre ABS market of roughly ' +
+    esc(money(c.securitisation.abs_market_size, c.securitisation.unit)) + " faces eventual take-out needs near " +
+    esc(money(c.securitisation.projected_takeout_need, c.securitisation.unit)) + ". " + prov(c.securitisation) +
+    "</p></div></section>";
+}
+
+/* Align several FRED series onto one date axis. Dates present in one series
+   and not another yield null there, which the renderer leaves as a gap. */
+function align(ids) {
+  var dates = {}, i;
+  ids.forEach(function (id) {
+    var s = S.series[id];
+    if (s) s.dates.forEach(function (d) { dates[d] = 1; });
+  });
+  var xs = Object.keys(dates).sort();
+  var out = ids.map(function (id) {
+    var s = S.series[id], by = {};
+    if (s) for (i = 0; i < s.dates.length; i++) by[s.dates[i]] = s.values[i];
+    return { id: id, name: s ? s.label : id, values: xs.map(function (d) {
+      return by[d] === undefined ? null : by[d]; }) };
+  });
+  return { xs: xs, series: out };
+}
+
+/* 3. Federal */
+
+function federalSection() {
+  var f = D["federal-debt"];
+  var projRows = f.projections.map(function (p) {
+    return "<tr><td>" + esc(p.label) + "</td><td>" + esc(money(p.value, p.unit)) + "</td>" +
+      '<td class="t">' + esc(p.note) + " " + prov(p) + "</td></tr>";
+  }).join("");
+  var seriesRowsHtml = f.series.map(function (s) {
+    return "<tr><td>" + esc(s.label) + "</td><td>" + esc(money(s.value, s.unit)) + "</td>" +
+      '<td class="t">' + chip(s) + " " + prov(s) + "</td></tr>";
+  }).join("");
+
+  return '<section><h2>US federal debt</h2>' +
+    '<p class="standfirst">' + interp(f.definitional_note) + "</p>" +
+    '<div class="card"><h2>Sixty years of it</h2>' +
+    '<p class="cap">Quarterly observations, not a sketch. The dashed line is the 1946 wartime peak, which the ' +
+    'total measure passed in 2012 and has stayed above since.</p>' +
+    '<div class="controls"><div class="group" role="group" aria-label="Debt measure">' +
+    '<span class="glabel">Measure</span>' +
+    '<button class="seg" data-fed="both" aria-pressed="true">Both</button>' +
+    '<button class="seg" data-fed="total" aria-pressed="false">Total</button>' +
+    '<button class="seg" data-fed="public" aria-pressed="false">Held by the public</button></div></div>' +
+    '<div id="lg-fed" class="legend"></div>' +
+    '<div class="plot"><canvas id="c-fed" height="320" role="img" ' +
+    'aria-label="US federal debt as a share of GDP, quarterly from 1966. A postwar low near 32 percent in 1974, rising through the 1980s, a pandemic peak above 130 percent in 2021, and roughly 123 percent now."></canvas>' +
+    '<div class="tooltip" id="t-fed"></div></div>' +
+    '<details class="fallback"><summary>Decade ends as a table</summary>' +
+    '<div class="tablewrap"><table id="tbl-fed"></table></div></details></div>' +
+    '<div class="card"><h2>Current position</h2>' +
+    '<div class="tablewrap"><table><thead><tr><th class="t">Measure</th><th>Value</th>' +
+    '<th class="t">Confidence and source</th></tr></thead><tbody>' + seriesRowsHtml + "</tbody></table></div>" +
+    '<p class="prose">' + interp("Interest is now roughly {us_interest} a year, the third-largest line in the " +
+      "federal budget, at a weighted average rate near 3.36 percent. Around {us_foreign_share} of the debt is " +
+      "held abroad, chiefly by Japan, the United Kingdom and China. That is the structural difference from " +
+      "Japan, whose far higher ratio is almost entirely financed at home.") + "</p></div>" +
+    '<div class="card"><h2>Where it goes from here</h2>' +
+    '<p class="cap">All three are models, not observations.</p>' +
+    '<div class="tablewrap"><table><thead><tr><th class="t">Projection</th><th>% of GDP</th>' +
+    '<th class="t">Note</th></tr></thead><tbody>' + projRows + "</tbody></table></div>" +
+    '<p class="note">Penn Wharton\'s figure is a modelled outer limit, not a forecast. Their own caveat is the ' +
+    'important part: debt markets can unravel earlier if beliefs about repayment shift. The binding constraint ' +
+    "is expectations, not arithmetic.</p></div></section>";
+}
+
+/* 4. Households */
+
+function householdsSection() {
+  var us = D["household-debt"].united_states, ca = D["household-debt"].canada;
+  var comp = us.composition.map(function (c) {
+    return "<tr><td>" + esc(c.category) + "</td><td>" + esc(money(c.value, c.unit)) + "</td><td>" +
+      (c.change_qoq === undefined ? "not stated" :
+        (c.change_qoq > 0 ? "+" : "") + "$" + Math.round(c.change_qoq * 1000) + "B") + "</td></tr>";
+  }).join("");
+
+  return '<section><h2>Households</h2>' +
+    '<p class="standfirst">' + esc(D["household-debt"].comparability_warning) + "</p>" +
+    '<div class="card"><h2>The comparison, made properly</h2>' +
+    '<p class="cap">' + esc(D["household-debt"].comparable_basis.note) + "</p>" +
+    '<div class="controls"><div class="group" role="group" aria-label="Household measure">' +
+    '<span class="glabel">Measure</span>' +
+    '<button class="seg" data-hh="gdp" aria-pressed="true">Debt to GDP</button>' +
+    '<button class="seg" data-hh="dsr" aria-pressed="false">Debt service</button></div></div>' +
+    '<div id="lg-hh" class="legend"></div>' +
+    '<div class="plot"><canvas id="c-hh" height="300" role="img" ' +
+    'aria-label="Household debt as a share of GDP for the United States and Canada on the BIS basis, quarterly from 2005. Canada sits far above the United States throughout and the gap widens after 2008."></canvas>' +
+    '<div class="tooltip" id="t-hh"></div></div>' +
+    '<p class="note">' + prov(D["household-debt"].comparable_basis) + "</p></div>" +
+
+    '<div class="tiles">' +
+    tile("US debt per person", T.us_debt_per_capita, "Total household debt over population") +
+    tile("Canada debt per person", T.ca_debt_per_capita, "Credit market debt over population") +
+    tile("US debt service", T.us_dsr, "Share of disposable income committed") +
+    tile("Canada debt service", T.ca_dsr, "Same concept, Canadian basis") +
+    "</div>" +
+
+    '<div class="card"><h2>Why the aggregate flatters</h2>' +
+    '<p class="prose">' + interp("The standard reassurance is that Canadian debt is only 17.4 percent of " +
+      "household net worth, which stands at {ca_net_worth}. That holds only if debt and assets sit with the " +
+      "same households. The wealthiest fifth hold {ca_wealth_top20} of Canada's total net worth, so for most " +
+      "of the distribution the aggregate ratio is describing someone else's balance sheet.") + "</p>" +
+    '<p class="prose">' + interp("Per person, Canadians owe {ca_debt_per_capita} against {us_debt_per_capita} " +
+      "in the United States, on national collections that count somewhat different things. The debt service " +
+      "ratio is the cleaner comparison: {ca_dsr} of Canadian after-tax income is committed before any spending " +
+      "happens, against {us_dsr} in the United States.") + "</p>" +
+    '<div class="caveat"><p><b>"Record household debt" is mostly a nominal artefact.</b> Adjusted for ' +
+    'inflation, US household debt sits roughly $1.4T below its real record, and the average card balance is ' +
+    'below its own record.</p><p>' + interp("Canada is the genuine outlier. At {ca_household_gdp} of GDP, " +
+      "Canadian households carry the heaviest debt load in the G7, against {us_household_gdp} in the United " +
+      "States, and the second heaviest among advanced economies after Switzerland.") + "</p></div></div>" +
+
+    '<div class="card"><h2>What Americans owe it on</h2>' +
+    '<p class="cap">' + prov(us.total_debt) + "</p>" +
+    '<div class="tablewrap"><table><thead><tr><th class="t">Category</th><th>Balance</th>' +
+    "<th>Quarterly change</th></tr></thead><tbody>" + comp + "</tbody></table></div>" +
+    '<p class="note">' + esc(us.delinquency.measurement_change) + "</p></div>" +
+
+    '<div class="card"><h2>The Canadian composition shift</h2>' +
+    '<p class="prose">' + interp("Total borrowing rose to {ca_borrowing} in the quarter even as net mortgage " +
+      "originations fell sharply, because consumer credit and other non-mortgage debt more than filled the " +
+      "gap. Secured borrowing is being replaced by unsecured borrowing, which is the more expensive and less " +
+      "forgiving kind.") + "</p>" +
+    '<p class="prose">' + interp("The debt-to-disposable-income ratio, {ca_dti}, is the figure Canadians " +
+      "usually quote and has no exact US equivalent in common use. It is an aggregate, not a per-household " +
+      "number: it does not mean a typical household owes that much per dollar earned.") + "</p>" +
+    '<p class="note">' + prov(ca.debt_to_disposable_income) + " " +
+    esc(ca.debt_to_disposable_income.conflicting_source || "") + "</p></div></section>";
+}
+
+/* 5. The AI-native companies */
+
+function companiesSection() {
+  var n = D["ai-capital"].ai_native_companies;
+  var rows = n.companies.map(function (co) {
+    var rr = co.annualised_run_rate, v;
+    if (!rr) v = "not disclosed";
+    else if (rr.value_range) v = "$" + rr.value_range[0] + " to $" + rr.value_range[1] + "B";
+    else v = money(rr.value, rr.unit);
+    var loss = co.operating_loss_2025 ? money(co.operating_loss_2025.value, co.operating_loss_2025.unit) :
+      (co.burn_rate ? "~" + money(co.burn_rate.value, co.burn_rate.unit) : "small profit");
+    return "<tr><td>" + esc(co.name) + "</td><td>" + esc(v) + "</td><td>" + esc(loss) + "</td><td>" +
+      (co.valuation ? esc(money(co.valuation.value, co.valuation.unit)) : "not stated") + "</td></tr>";
+  }).join("");
+  var an = n.companies.filter(function (c) { return c.name === "Anthropic"; })[0];
+
+  return '<section><h2>The companies at the end of the spending</h2>' +
+    '<p class="standfirst">' + esc(n.reconciliation_note) + "</p>" +
+    '<div class="card"><div class="tablewrap"><table><thead><tr><th class="t">Company</th>' +
+    "<th>Run rate</th><th>Loss</th><th>Valuation</th></tr></thead><tbody>" + rows + "</tbody></table></div>" +
+    '<p class="note">The Anthropic run rate is stored as a range because sources conflict, and the range is ' +
+    'the honest representation until a filing settles it. Collapsing it to one value would make the table ' +
+    "tidier and the page less true.</p>" +
+    '<div class="caveat"><p><b>Circularity worth watching.</b> OpenAI\'s cloud commitments total something ' +
+    'near $588B. Those same contracts appear as backlog on the counterparties\' books and are cited as ' +
+    'evidence that the buildout is demand-backed.</p>' +
+    '<p>They are one company\'s obligations counted as another company\'s future revenue. That is not by ' +
+    'itself improper, and it is not the same as the 1990s capacity swaps. But it means backlog and commitment ' +
+    "cannot both be treated as independent confirmation of demand.</p>" +
+    "<p>" + esc(an ? an.disclosure : "") + "</p></div></div></section>";
+}
+
+/* 6. Cycles */
+
+function cyclesSection() {
+  var c = D.cycles, t = c.telecom_buildout;
+  var diffs = c.differences_that_matter.map(function (x) {
+    return '<tr><td class="t"><b>' + esc(x.point) + '</b></td><td class="t">' + esc(x.detail) + "</td></tr>";
+  }).join("");
+
+  return '<section><h2>Is any of this cyclical?</h2>' +
+    '<p class="standfirst">' + esc(c.framing) + "</p>" +
+    '<div class="card"><h2>Against the closest analogue</h2>' +
+    '<p class="cap">Capital spending as a share of US output, each buildout indexed to its own first year. ' +
+    'The telecom series is in 2025 dollars.</p>' +
+    '<div id="lg-cyc" class="legend"></div>' +
+    '<div class="plot"><canvas id="c-cyc" height="280" role="img" ' +
+    'aria-label="AI and 1990s telecom capital spending as a share of US GDP, each indexed to year zero of its buildout. The AI line rises to roughly twice the telecom peak in about four years."></canvas>' +
+    '<div class="tooltip" id="t-cyc"></div></div>' +
+    '<p class="prose">' + interp("At {capex_2026} against {us_gdp} of US output, one year of hyperscaler " +
+      "capital spending equals roughly {capex_share_gdp} of American GDP. The 1990s telecom fibre buildout " +
+      "peaked at " + T.telecom_share_gdp + ". This buildout is running at about twice that share, reached it " +
+      "in about four years rather than five, and is concentrated in fewer than ten companies rather than " +
+      "dozens.") + "</p></div>" +
+    '<div class="card"><h2>Where the analogy breaks</h2>' +
+    '<div class="tablewrap"><table><tbody>' + diffs + "</tbody></table></div>" +
+    '<h3>What would actually tell you</h3>' +
+    '<p class="prose">Since AI profitability has no cycle history of its own, the observable signals sit ' +
+    "upstream in semiconductors and downstream in credit.</p>" +
+    "<ul class=\"prose\">" + c.leading_indicators_to_watch.map(function (i) {
+      return "<li>" + esc(i) + "</li>"; }).join("") + "</ul>" +
+    '<p class="note">Watching these is not a prediction that the cycle turns. It is the list of places where a ' +
+    "turn would become visible first. " + esc(t.aftermath) + "</p></div></section>";
+}
+
+/* 7. What changed, and how the page is kept true */
+
+function changedSection(log) {
+  var rows = "";
+  if (log && log.recent && log.recent.length) {
+    rows = log.recent.filter(function (r) {
+      return r.action === "written" || r.action === "blocked" || r.action === "stale-upstream";
+    }).slice(0, 12).map(function (r) {
+      return "<tr><td>" + esc(r.label || r.key) + "</td><td>" +
+        (r.before === undefined ? "" : esc(String(r.before))) + "</td><td>" +
+        (r.after === undefined ? "" : esc(String(r.after))) + "</td><td>" +
+        esc(r.as_of_after || "") + '</td><td class="t">' + esc(r.action) +
+        (r.reason ? ". " + esc(r.reason) : "") + "</td></tr>";
+    }).join("");
+  }
+  if (!rows) rows = '<tr><td class="t" colspan="5">Nothing has changed since the log began.</td></tr>';
+
+  return '<section><h2>What changed</h2>' +
+    '<p class="standfirst">The sovereign figures barely move and the AI figures move fast. Showing the ' +
+    'changes side by side makes that difference in tempo legible, which a snapshot cannot.</p>' +
+    '<div class="card"><div class="tablewrap"><table><thead><tr><th class="t">Figure</th><th>Before</th>' +
+    '<th>After</th><th>As of</th><th class="t">Outcome</th></tr></thead><tbody>' + rows +
+    "</tbody></table></div>" +
+    '<p class="note">A refresh that would move a figure by more than ' +
+    esc(String(D.meta.updater.max_change_percent)) + ' percent is logged and refused rather than written, ' +
+    'because these series do not move that fast: a jump that large means an endpoint changed, not that the ' +
+    'world did. A refresh that would drag a date backwards is refused too. The updater can only change ' +
+    "figures that already exist; adding one is a human decision.</p></div>" +
+
+    '<div class="card"><h2>Sources and method</h2>' +
+    '<p class="prose">Federal debt comes from the US Treasury and the St Louis Fed. GDP, corporate debt, ' +
+    'household debt on the comparable basis, debt service and population come from the Federal Reserve, the ' +
+    'Bureau of Economic Analysis, the Bank for International Settlements and the World Bank. Canadian ' +
+    'household figures come from Statistics Canada. Those refresh on a schedule.</p>' +
+    '<p class="prose">The AI figures do not, and cannot. They come from securities filings, ratings agency ' +
+    'notes and press reporting, and they need something that can read rather than something that can poll. ' +
+    'The date at the top says when a person last went through them. Where sources disagree, both are shown ' +
+    'rather than one being chosen to make a table tidier.</p>' +
+    '<p class="prose">Every figure carries the date it was true and a link to where it came from. A figure ' +
+    'missing either is marked on the page rather than quietly rendered as though it were complete.</p>' +
+    '<p class="note">' + esc(D["ai-capital"].ai_native_companies.companies.filter(function (c) {
+      return c.name === "Anthropic"; })[0].disclosure) + "</p></div></section>";
+}
+
+/* Registry the prose interpolates against. Everything a sentence can say. */
+function tokens() {
+  var us = D["household-debt"].united_states, ca = D["household-debt"].canada;
+  var t = {
+    us_total_public_debt: fed("us_total_public_debt"),
+    us_debt_held_by_public: fed("us_debt_held_by_public"),
+    us_debt_to_gdp_total: fed("us_debt_to_gdp_total"),
+    us_interest: fed("us_annual_interest"),
+    us_foreign_share: fed("us_foreign_held_share"),
+    us_deficit: fed("us_fy2026_deficit"),
+    us_gdp: gdpS("us_gdp_nominal"),
+    ca_gdp: gdpS("ca_gdp_nominal_usd"),
+    fx: D.gdp.fx_cad_usd,
+    us_household: us.total_debt,
+    us_household_gdp: us.debt_to_gdp,
+    us_dsr: us.debt_service_ratio,
+    us_delinquent: { value: us.delinquency.share_of_balances_delinquent, unit: "percent" },
+    ca_household: ca.total_credit_market_debt,
+    ca_household_gdp: ca.debt_to_gdp,
+    ca_dti: ca.debt_to_disposable_income,
+    ca_dsr: ca.debt_service_ratio,
+    ca_net_worth: ca.net_worth_context.household_net_worth,
+    ca_wealth_top20: ca.net_worth_context.wealth_concentration,
+    ca_borrowing: ca.borrowing_flow,
+    capex_2026: aiItem("measure_b_commitments", "hyperscaler_capex_2026"),
+    leases: aiItem("measure_b_commitments", "signed_uncommenced_leases"),
+    issuance_2025: aiItem("measure_a_balance_sheet", "hyperscaler_bond_issuance_2025"),
+    dc_debt_2025: aiItem("measure_a_balance_sheet", "datacenter_debt_issuance_2025"),
+    obs_five: aiItem("measure_c_off_balance_sheet", "nikkei_obs_five_companies"),
+    obs_nine: aiItem("measure_c_off_balance_sheet", "wsj_obs_nine_companies"),
+    private_credit: aiItem("measure_c_off_balance_sheet", "private_credit_ai_loans"),
+    financing_gap: aiItem("measure_c_off_balance_sheet", "ms_financing_gap"),
+    bank_exposure: aiItem("measure_c_off_balance_sheet", "bank_ai_exposure"),
+    capex_share_gdp: D.cycles.ai_buildout.capex_share_of_us_gdp_2026,
+    telecom_peak: { value: D.cycles.telecom_buildout.peak_annual_capex.value, unit: "USD_billions" }
+  };
+  if (S && S.derived) {
+    t.us_debt_per_capita = S.derived.us_household_debt_per_capita;
+    t.ca_debt_per_capita = S.derived.ca_household_debt_per_capita;
+  }
+  // Derived comparisons, computed rather than asserted, so they cannot drift.
+  var obsT = toTrillions(t.obs_nine), usG = t.us_gdp && t.us_gdp.value, caG = t.ca_gdp && t.ca_gdp.value;
+  if (obsT && usG) t.obs_vs_us_gdp = { value: +(obsT / usG * 100).toFixed(1), unit: "percent" };
+  if (obsT && caG) t.obs_vs_ca_gdp = { value: Math.round(obsT / caG * 100), unit: "percent" };
+  var tp = D.cycles.telecom_buildout.peak_capex_share_of_gdp.value_range;
+  t.telecom_share_gdp = tp[0] + " to " + tp[1] + "%";
+  return t;
+}
+
+/* ---------------- charts, controls, theme ---------------- */
+
+var state = { mflip: "abs", fed: "both", hh: "gdp" };
+var cMeasures, cFed, cHh, cCyc;
+
+function legend(id, series) {
+  document.getElementById(id).innerHTML = series.map(function (s) {
+    return '<span class="item"><span class="swatch" style="background:' + s.color + '"></span>' +
+      esc(s.name) + "</span>";
+  }).join("");
+}
+
+function drawMeasures() {
+  var a = D["ai-capital"].measure_a_balance_sheet.history;
+  var b = D["ai-capital"].measure_b_commitments.history;
+  var merged = { series: b.series.concat(a.series) };
+  var r = seriesRows(merged);
+  var gdpByYear = {};
+  var g = S.series.GDP;
+  if (g) for (var i = 0; i < g.dates.length; i++) {
+    var y = +g.dates[i].slice(0, 4);
+    gdpByYear[y] = Math.max(gdpByYear[y] || 0, g.values[i]);  // billions
+  }
+  var pal = ["--series-2", "--series-3", "--series-1", "--series-4"];
+  var out = r.series.map(function (s, k) {
+    return {
+      name: s.name, color: css(pal[k % pal.length]), dots: true,
+      values: s.values.map(function (v, j) {
+        if (v === null) return null;
+        if (state.mflip === "abs") return v;
+        var gg = gdpByYear[r.xs[j]];
+        return gg ? +(v / gg * 100).toFixed(2) : null;
+      })
+    };
+  });
+  cMeasures.opts.unit = state.mflip === "abs" ? "USD_billions" : "percent";
+  legend("lg-measures", out);
+  cMeasures.setData(r.xs, out);
+
+  var t = document.getElementById("tbl-measures");
+  t.innerHTML = "<thead><tr><th class='t'>Year</th>" + out.map(function (s) {
+    return "<th>" + esc(s.name) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+    r.xs.map(function (x, j) {
+      return "<tr><td>" + x + "</td>" + out.map(function (s) {
+        return "<td>" + (s.values[j] === null ? "no data" : esc(money(s.values[j], cMeasures.opts.unit))) +
+          "</td>"; }).join("") + "</tr>";
+    }).join("") + "</tbody>";
+}
+
+function drawFed() {
+  var ids = state.fed === "total" ? ["GFDEGDQ188S"] :
+            state.fed === "public" ? ["FYGFGDQ188S"] : ["GFDEGDQ188S", "FYGFGDQ188S"];
+  var r = align(ids);
+  var pal = ["--series-1", "--series-3"];
+  var out = r.series.map(function (s, k) { return { name: s.name, color: css(pal[k % 2]), values: s.values }; });
+  legend("lg-fed", out);
+  cFed.setData(r.xs, out);
+
+  var t = document.getElementById("tbl-fed");
+  var rows = r.xs.map(function (x, j) { return { x: x, j: j }; })
+    .filter(function (p) { return p.x.slice(5) === "10-01" && +p.x.slice(0, 4) % 10 === 0; });
+  t.innerHTML = "<thead><tr><th class='t'>Quarter</th>" + out.map(function (s) {
+    return "<th>" + esc(s.name) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+    rows.map(function (p) {
+      return "<tr><td>" + esc(p.x) + "</td>" + out.map(function (s) {
+        return "<td>" + (s.values[p.j] === null ? "no data" : s.values[p.j].toFixed(1) + "%") + "</td>";
+      }).join("") + "</tr>";
+    }).join("") + "</tbody>";
+}
+
+function drawHh() {
+  var ids = state.hh === "gdp" ? ["HDTGPDUSQ163N", "HDTGPDCAQ163N"] : ["TDSP"];
+  var r = align(ids);
+  var pal = ["--series-1", "--series-2"];
+  var out = r.series.map(function (s, k) { return { name: s.name, color: css(pal[k % 2]), values: s.values }; });
+  if (state.hh === "dsr") {
+    // Canada's DSR is quarterly from StatCan and not on FRED, so it is drawn
+    // from the curated file at the quarters it exists for. A flat line would
+    // imply observations that were never published.
+    var ca = D["household-debt"].canada.debt_service_ratio;
+    var byQ = {};
+    (ca.history || []).forEach(function (h) {
+      var y = h.period.slice(0, 4), q = +h.period.slice(6);
+      byQ[y + "-" + ["01", "04", "07", "10"][q - 1] + "-01"] = h.value;
+    });
+    out.push({ name: "Canada household debt service ratio", color: css("--series-2"), dots: true,
+      values: r.xs.map(function (d) { return byQ[d] === undefined ? null : byQ[d]; }) });
+  }
+  cHh.opts.unit = "percent";
+  cHh.opts.includeZero = state.hh === "gdp" ? false : true;
+  legend("lg-hh", out);
+  cHh.setData(r.xs, out);
+}
+
+function drawCyc() {
+  var t = D.cycles.telecom_buildout, ai = D.cycles.ai_buildout;
+  // Telecom: peak share of GDP is published as a range, so the midpoint is
+  // used and the range is stated in the prose beside it.
+  var tr = t.peak_capex_share_of_gdp.value_range;
+  var tPeak = (tr[0] + tr[1]) / 2;
+  var gdpByYear = {}, g = S.series.GDP, i;
+  if (g) for (i = 0; i < g.dates.length; i++) {
+    var y = +g.dates[i].slice(0, 4);
+    gdpByYear[y] = Math.max(gdpByYear[y] || 0, g.values[i]);
+  }
+  var capex = D["ai-capital"].measure_b_commitments.history.series[0].points;
+  var xs = [], aiV = [], telV = [];
+  var base = capex[0].year;
+  for (i = 0; i < 8; i++) {
+    xs.push("Year " + i);
+    var pt = capex.filter(function (p) { return p.year === base + i; })[0];
+    var gg = gdpByYear[base + i];
+    aiV.push(pt && gg ? +(pt.value / gg * 100).toFixed(2) : null);
+    // Telecom ramped over roughly five years to its peak, so the shape is
+    // drawn from the two published endpoints only: start near zero, peak at
+    // year five. Intermediate years are left null rather than invented.
+    telV.push(i === 0 ? 0.1 : (i === 5 ? tPeak : null));
+  }
+  var out = [
+    { name: "AI buildout, capex as % of US GDP", color: css("--series-2"), dots: true, values: aiV },
+    { name: "Telecom buildout peak, 1996 to 2002", color: css("--series-4"), dashed: true, dots: true, values: telV }
+  ];
+  cCyc.opts.unit = "percent";
+  legend("lg-cyc", out);
+  cCyc.setData(xs, out);
+}
+
+function seg(attr, key, fn) {
+  document.querySelectorAll("[data-" + attr + "]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      document.querySelectorAll("[data-" + attr + "]").forEach(function (o) {
+        o.setAttribute("aria-pressed", "false"); });
+      b.setAttribute("aria-pressed", "true");
+      state[key] = b.getAttribute("data-" + attr);
+      fn();
+    });
+  });
+}
+
+function initTheme() {
+  var btn = document.getElementById("theme-toggle");
+  var saved = null;
+  try { saved = localStorage.getItem("debt-theme"); } catch (e) { saved = null; }
+  if (saved) document.documentElement.setAttribute("data-theme", saved);
+  btn.addEventListener("click", function () {
+    var cur = document.documentElement.getAttribute("data-theme");
+    if (!cur) {
+      cur = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    var next = cur === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("debt-theme", next); } catch (e) { /* private mode */ }
+    redrawSeriesColours();
+  });
+  if (window.matchMedia) {
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    var onChange = function () { redrawSeriesColours(); };
+    if (mq.addEventListener) mq.addEventListener("change", onChange); else mq.addListener(onChange);
+  }
+}
+
+/* Series colours are resolved from CSS variables when the data is set, so a
+   theme flip has to re-run the builders, not just redraw with stale colours. */
+function redrawSeriesColours() { drawMeasures(); drawFed(); drawHh(); drawCyc(); }
+
+function render(log) {
+  T = tokens();
+  document.getElementById("stamp").innerHTML = stampLine();
+  document.getElementById("app").innerHTML =
+    tiles() + heroScale() + measuresSection() + companiesSection() +
+    federalSection() + householdsSection() + cyclesSection() + changedSection(log);
+
+  cMeasures = new Chart("c-measures", "t-measures", { unit: "USD_billions", padLeft: 62 });
+  cFed = new Chart("c-fed", "t-fed", { unit: "percent", includeZero: false, padLeft: 48 });
+  cHh = new Chart("c-hh", "t-hh", { unit: "percent", includeZero: false, padLeft: 48 });
+  cCyc = new Chart("c-cyc", "t-cyc", { unit: "percent", padLeft: 48 });
+
+  seg("mflip", "mflip", drawMeasures);
+  seg("fed", "fed", drawFed);
+  seg("hh", "hh", drawHh);
+  redrawSeriesColours();
+}
 
 function load() {
   var app = document.getElementById("app");
@@ -319,13 +1351,24 @@ function load() {
     D = {};
     FILES.forEach(function (f, i) { D[f] = results[i]; });
     S = results[results.length - 1];
-    render();
+    // The changelog is a nicety, not a dependency: the page renders without it.
+    return fetch("api/changelog").then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; });
+  }).then(function (log) {
+    render(log);
   }).catch(function (err) {
     app.innerHTML = '<div class="error"><h2>The data layer did not load</h2><p>' +
       esc(err.message) + "</p></div>";
   });
 }
 
+var resizeTimer;
+window.addEventListener("resize", function () {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(redrawAll, 120);
+});
+
+initTheme();
 load();
 })();
 </script>
