@@ -481,6 +481,13 @@ function Chart(canvasId, tooltipId, opts) {
   this.hover = null;
   this.xs = [];
   this.series = [];
+  // Captured once. canvas.height is a reflected IDL attribute, so assigning
+  // cv.height rewrites the attribute the next draw would read back: at
+  // devicePixelRatio 3 the logical height went 320 -> 960 -> 2880 on
+  // successive redraws. At dpr 1 it is a harmless no-op, which is why this
+  // only ever showed up on phones, where every touchmove triggers a redraw
+  // and the canvas balloons out of the viewport on first contact.
+  this.logicalHeight = parseInt(this.canvas.getAttribute("height"), 10) || 300;
   var self = this;
   this.canvas.addEventListener("mousemove", function (e) { self.onMove(e.clientX); });
   this.canvas.addEventListener("mouseleave", function () { self.clearHover(); });
@@ -507,7 +514,7 @@ Chart.prototype.setData = function (xs, series) {
 Chart.prototype.draw = function () {
   var cv = this.canvas, ctx = cv.getContext("2d");
   var dpr = window.devicePixelRatio || 1;
-  var w = cv.clientWidth, h = parseInt(cv.getAttribute("height"), 10);
+  var w = cv.clientWidth, h = this.logicalHeight;
   if (!w) return;
   cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
   cv.style.height = h + "px";
@@ -516,7 +523,10 @@ Chart.prototype.draw = function () {
   if (!this.xs.length || !this.series.length) return;
 
   var muted = css("--muted"), grid = css("--grid"), axis = css("--axis"), surface = css("--surface-1");
-  var pad = { l: this.opts.padLeft || 54, r: 14, t: 12, b: 28 };
+  // A 62px gutter is a sixth of a phone screen. Narrow it below 480 so the
+  // plot itself gets the width.
+  var padL = this.opts.padLeft || 54;
+  var pad = { l: w < 480 ? Math.min(padL, 40) : padL, r: 14, t: 12, b: 28 };
   var g = { left: pad.l, right: w - pad.r, top: pad.t, bottom: h - pad.b };
   this.geom = g;
 
@@ -568,7 +578,15 @@ Chart.prototype.draw = function () {
   ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.fillStyle = muted;
   var every = Math.max(1, Math.round(this.xs.length / (w > 700 ? 10 : 5)));
   for (i = 0; i < this.xs.length; i += every) {
-    ctx.fillText(String(this.xs[i]).slice(0, this.opts.xSlice || 4), X(i), g.bottom + 6);
+    // Only an ISO date gets trimmed to its year. Blanket truncation turned the
+    // categorical axis on the buildout chart into "Year Year Year Year".
+    var lab = String(this.xs[i]);
+    if (/^\d{4}-\d{2}/.test(lab)) lab = lab.slice(0, 4);
+    // Keep the first and last labels inside the canvas instead of letting
+    // them hang off the edge and get clipped.
+    var lx = X(i);
+    ctx.textAlign = lx > g.right - 24 ? "right" : (lx < g.left + 16 ? "left" : "center");
+    ctx.fillText(lab, Math.min(Math.max(lx, g.left), g.right), g.bottom + 6);
   }
   ctx.strokeStyle = axis; ctx.lineWidth = 1;
   ctx.beginPath();
@@ -1056,8 +1074,9 @@ function cyclesSection() {
   return '<section><h2>Is any of this cyclical?</h2>' +
     '<p class="standfirst">' + esc(c.framing) + "</p>" +
     '<div class="card"><h2>Against the closest analogue</h2>' +
-    '<p class="cap">Capital spending as a share of US output, each buildout indexed to its own first year. ' +
-    'The telecom series is in 2025 dollars.</p>' +
+    '<p class="cap">Capital spending as a share of US output, indexed to the first year of the AI buildout. ' +
+    'The telecom comparison is drawn as a band at its published peak range rather than a line, because what ' +
+    'was published is the height it reached, not a year-by-year path.</p>' +
     '<div id="lg-cyc" class="legend"></div>' +
     '<div class="plot"><canvas id="c-cyc" height="280" role="img" ' +
     'aria-label="AI and 1990s telecom capital spending as a share of US GDP, each indexed to year zero of its buildout. The AI line rises to roughly twice the telecom peak in about four years."></canvas>' +
@@ -1526,21 +1545,24 @@ function drawCyc() {
     gdpByYear[y] = Math.max(gdpByYear[y] || 0, g.values[i]);
   }
   var capex = D["ai-capital"].measure_b_commitments.history.series[0].points;
-  var xs = [], aiV = [], telV = [];
+  var xs = [], aiV = [];
   var base = capex[0].year;
   for (i = 0; i < 8; i++) {
     xs.push("Year " + i);
     var pt = capex.filter(function (p) { return p.year === base + i; })[0];
     var gg = gdpByYear[base + i];
     aiV.push(pt && gg ? +(pt.value / gg * 100).toFixed(2) : null);
-    // Telecom ramped over roughly five years to its peak, so the shape is
-    // drawn from the two published endpoints only: start near zero, peak at
-    // year five. Intermediate years are left null rather than invented.
-    telV.push(i === 0 ? 0.1 : (i === 5 ? tPeak : null));
   }
+  // The telecom side is published as a peak range, not a trajectory. Drawing
+  // it as a line needed intermediate years nobody published, so it is a
+  // reference band instead: the thing actually being compared against is the
+  // height it reached, not the path it took.
+  cCyc.opts.refs = [
+    { y: tr[0], label: "Telecom peak, " + tr[0] + " to " + tr[1] + "% of GDP", color: css("--series-4") },
+    { y: tr[1], label: "", color: css("--series-4") }
+  ];
   var out = [
-    { name: "AI buildout, capex as % of US GDP", color: css("--series-2"), dots: true, values: aiV },
-    { name: "Telecom buildout peak, 1996 to 2002", color: css("--series-4"), dashed: true, dots: true, values: telV }
+    { name: "AI buildout, capex as % of US GDP", color: css("--series-2"), dots: true, values: aiV }
   ];
   cCyc.opts.unit = "percent";
   legend("lg-cyc", out);
