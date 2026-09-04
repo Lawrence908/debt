@@ -1,0 +1,128 @@
+{
+  "schema_version": "1.0",
+  "built": "2026-09-04",
+  "title": "Debt Atlas",
+  "provenance_note": "Reconstructed 2026-09-04. The original delivery referenced data/meta.json from index.html and from BUILD-PLAN.md but did not include it, so the page could not load. This file was authored to close that gap. It contains no figures, only cadence, endpoints and schema, so nothing here overrides a researched value.",
+  "authoring_rules": [
+    "Every value carries value, unit, as_of, confidence, source and source_url. A value missing as_of or source_url renders with a visible warning rather than rendering clean.",
+    "confidence is one of reported (filed or official), estimate (third-party reconstruction), projection (a model). It drives colour and hatching, so mislabelling is a correctness bug.",
+    "No figure is typed into markup. Prose interpolates from the data layer.",
+    "A disputed figure gets a sibling disputed field rather than being overwritten."
+  ],
+  "confidence_levels": {
+    "reported": "Filed with a regulator or published by the issuing institution.",
+    "estimate": "Third-party reconstruction from partial disclosure.",
+    "projection": "Output of a model, not an observation."
+  },
+  "files": [
+    {
+      "file": "gdp.json",
+      "label": "GDP denominators and the CAD/USD rate",
+      "cadence": "quarterly",
+      "automatable": "partly",
+      "note": "US GDP from FRED. Canada GDP is an IMF full-year estimate; StatCan WDS can replace it once vector IDs are settled. FX_CAD_USD lives here so the page can show which rate produced a converted bar."
+    },
+    {
+      "file": "federal-debt.json",
+      "label": "US federal debt level, ratio, projections",
+      "cadence": "daily level, quarterly ratio",
+      "automatable": "yes",
+      "note": "Level from Treasury Fiscal Data, ratio from FRED GFDEGDQ188S. Projections are institutional models and are never touched by the updater."
+    },
+    {
+      "file": "household-debt.json",
+      "label": "US and Canadian household balance sheets",
+      "cadence": "quarterly",
+      "automatable": "partly",
+      "note": "NY Fed publishes XLSX roughly six weeks after quarter end: parse the workbook, never scrape the HTML. StatCan National Balance Sheet Accounts roughly ten weeks after."
+    },
+    {
+      "file": "ai-capital.json",
+      "label": "AI corporate debt across three measures",
+      "cadence": "quarterly on earnings, plus ad hoc",
+      "automatable": "no",
+      "note": "SEC filings, ratings notes and press reporting. Needs something that can read, not something that can poll. Carries last_reviewed; the page shows staleness past the threshold below."
+    },
+    {
+      "file": "cycles.json",
+      "label": "Telecom analogue and leading indicators",
+      "cadence": "rarely",
+      "automatable": "no",
+      "note": "Historical. Changes only when the analysis changes."
+    },
+    {
+      "file": "meta.json",
+      "label": "This file",
+      "cadence": "on schema change",
+      "automatable": "no"
+    }
+  ],
+  "staleness": {
+    "manual_review_days": 90,
+    "note": "ai-capital.json and cycles.json cannot be automated. Once last_reviewed exceeds this many days the page says so. Honest staleness beats a number that looks fresh because a cron touched the file."
+  },
+  "updater": {
+    "max_change_percent": 20,
+    "may_create_values": false,
+    "preserves": [
+      "source",
+      "source_url",
+      "confidence",
+      "unit",
+      "note"
+    ],
+    "writes": [
+      "value",
+      "as_of"
+    ],
+    "note": "A fetched value differing from the stored one by more than max_change_percent is logged and not written. These series do not move that fast, so a large jump means an API change, a units change, or a bad parse. The updater never creates a value; a new series is a human decision."
+  },
+  "api_hooks": {
+    "treasury_debt_to_the_penny": {
+      "url": "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/debt_to_penny",
+      "auth": "none",
+      "targets": [
+        "federal-debt.json:us_total_public_debt"
+      ],
+      "note": "Sort by -record_date and take the first row. tot_pub_debt_out_amt is in dollars; the stored value is USD trillions."
+    },
+    "fred_csv": {
+      "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}",
+      "auth": "none",
+      "note": "Keyless CSV fallback. Used when FRED_API_KEY is absent."
+    },
+    "fred_api": {
+      "url": "https://api.stlouisfed.org/fred/series/observations",
+      "auth": "FRED_API_KEY",
+      "targets": [
+        "federal-debt.json:us_debt_to_gdp_total via GFDEGDQ188S",
+        "federal-debt.json:historical.points via GFDEGDQ188S",
+        "gdp.json:us_gdp_nominal via GDP"
+      ]
+    },
+    "statcan_wds": {
+      "url": "https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorsAndLatestNPeriods",
+      "auth": "none",
+      "targets": [
+        "household-debt.json:canada.total_credit_market_debt",
+        "household-debt.json:canada.debt_to_disposable_income",
+        "household-debt.json:canada.debt_service_ratio"
+      ],
+      "note": "Needs vector IDs. Unresolved; see the gap note in the README. Until a vector is confirmed against a published StatCan table, this target stays manual rather than guessed."
+    },
+    "nyfed_household_credit": {
+      "url": "https://www.newyorkfed.org/microeconomics/hhdc",
+      "auth": "none",
+      "format": "xlsx",
+      "targets": [
+        "household-debt.json:united_states"
+      ],
+      "note": "Parse the published workbook. Never scrape the HTML page: the layout changes and a scrape fails silently into a plausible wrong number."
+    }
+  },
+  "fred_series": {
+    "GFDEGDQ188S": "Total public debt as percent of GDP, quarterly",
+    "GDP": "US nominal gross domestic product, quarterly, billions of dollars",
+    "GFDEBTN": "Total public debt outstanding, quarterly, millions of dollars"
+  }
+}

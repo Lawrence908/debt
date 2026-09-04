@@ -1,0 +1,127 @@
+{
+  "series_group": "federal_debt",
+  "update_cadence": "Debt level: daily via Treasury Debt to the Penny. Ratio: quarterly, gated on BEA GDP.",
+  "definitional_note": "Two different numbers get called 'the national debt'. Total public debt outstanding (~$39.9T) includes intragovernmental holdings — money the government owes itself, mostly trust funds. Debt held by the public (~$32T) excludes those. CBO and most economists use debt held by the public. Cable news usually quotes total. They differ by about 24 percentage points of GDP, which is larger than most countries' entire debt load.",
+  "series": [
+    {
+      "id": "us_total_public_debt",
+      "label": "Total public debt outstanding",
+      "value": 39.89,
+      "unit": "USD_trillions",
+      "as_of": "2026-Q2",
+      "confidence": "reported",
+      "source": "US Treasury, via PrimeRates compilation",
+      "source_url": "https://primerates.com/us-debt/debt-to-gdp-ratio/",
+      "fred_series_id": "GFDEBTN",
+      "note": "CEIC reports $39.46T for June 2026 on a central-government-only basis. The gap is definitional, not an error."
+    },
+    {
+      "id": "us_debt_to_gdp_total",
+      "label": "Total public debt as share of GDP",
+      "value": 122.8,
+      "unit": "percent",
+      "as_of": "2026-Q2",
+      "confidence": "reported",
+      "source": "Derived from Treasury debt and BEA advance Q2 2026 GDP",
+      "source_url": "https://primerates.com/us-debt/debt-to-gdp-ratio/",
+      "fred_series_id": "GFDEGDQ188S",
+      "note": "FRED's own GFDEGDQ188S read 122.59% as of 1 Jan 2026. CEIC shows 124.6% for June 2026 against 125.3% the prior quarter. Sources disagree at the margin because of the GDP denominator vintage."
+    },
+    {
+      "id": "us_debt_held_by_public",
+      "label": "Debt held by the public",
+      "value": 32.2,
+      "unit": "USD_trillions",
+      "as_of": "FY2026 projected year-end",
+      "confidence": "projection",
+      "source": "J.P. Morgan Asset Management",
+      "source_url": "https://am.jpmorgan.com/us/en/asset-management/adv/insights/market-insights/market-updates/notes-on-the-week-ahead/five-scenarios-for-the-federal-debt/",
+      "note": "Up from $30.3T at end of FY2025. Equivalent to 100.4% of GDP, versus 99.7% a year earlier."
+    },
+    {
+      "id": "us_fy2026_deficit",
+      "label": "FY2026 federal deficit",
+      "value": 1.89,
+      "unit": "USD_trillions",
+      "as_of": "FY2026 estimate",
+      "confidence": "projection",
+      "source": "J.P. Morgan Asset Management",
+      "source_url": "https://am.jpmorgan.com/us/en/asset-management/adv/insights/market-insights/market-updates/notes-on-the-week-ahead/five-scenarios-for-the-federal-debt/",
+      "note": "5.9% of GDP, against $7.385T spending and $5.495T revenue. Prior year was $1.775T / 5.8%. The 50-year average deficit is 3.8% of GDP."
+    },
+    {
+      "id": "us_annual_interest",
+      "label": "Annual interest cost on federal debt",
+      "value": 1.04,
+      "unit": "USD_trillions",
+      "as_of": "2026-02",
+      "confidence": "estimate",
+      "source": "Derived from Treasury weighted average coupon",
+      "source_url": "https://primerates.com/us-debt/debt-to-gdp-ratio/",
+      "note": "Weighted average rate ~3.36% on ~$31T marketable debt. Third-largest federal line item. Roughly $2.74B per day."
+    },
+    {
+      "id": "us_foreign_held_share",
+      "label": "Share of US debt held by foreign investors",
+      "value": 30,
+      "unit": "percent",
+      "as_of": "2026",
+      "confidence": "estimate",
+      "source": "PrimeRates, citing Treasury TIC data",
+      "source_url": "https://primerates.com/us-debt/debt-to-gdp-ratio/",
+      "note": "Largest holders: Japan $1.13T, UK $0.83T, China $0.74T. This is the structural difference from Japan, whose higher ratio is almost entirely domestically financed."
+    }
+  ],
+  "historical": {
+    "label": "Total public debt as % of GDP",
+    "unit": "percent",
+    "confidence": "reported",
+    "source": "FRED GFDEGDQ188S and OMB historical tables",
+    "source_url": "https://fred.stlouisfed.org/series/GFDEGDQ188S",
+    "points": [
+      { "year": 1946, "value": 106, "note": "Second World War financing peak" },
+      { "year": 1974, "value": 31.8, "note": "Postwar low (Sep 1974)" },
+      { "year": 1980, "value": 33 },
+      { "year": 1990, "value": 55 },
+      { "year": 2000, "value": 56 },
+      { "year": 2007, "value": 63, "note": "Pre-financial-crisis" },
+      { "year": 2012, "value": 100 },
+      { "year": 2021, "value": 130.3, "note": "All-time high, Mar 2021, pandemic response" },
+      { "year": 2024, "value": 121 },
+      { "year": 2026, "value": 122.8, "note": "Current" }
+    ],
+    "gap_note": "Values for 1980, 1990, 2000, 2012 and 2024 are approximate reads off the FRED series and should be replaced with exact quarterly observations when the FRED pull is wired up. Marked here so they are not mistaken for precise."
+  },
+  "projections": [
+    {
+      "id": "cbo_baseline_2036",
+      "label": "CBO baseline: debt held by public, 2036",
+      "value": 120,
+      "unit": "percent_of_gdp",
+      "confidence": "projection",
+      "source": "CBO, The Budget and Economic Outlook 2026–2036",
+      "source_url": "https://www.cbo.gov/publication/62105",
+      "note": "From 101% in 2026. Surpasses the 1946 record of 106%."
+    },
+    {
+      "id": "jpm_adjusted_2036",
+      "label": "Same path with tariff shortfall and permanent OBBBA tax breaks",
+      "value": 127.7,
+      "unit": "percent_of_gdp",
+      "confidence": "projection",
+      "source": "J.P. Morgan Asset Management",
+      "source_url": "https://am.jpmorgan.com/us/en/asset-management/adv/insights/market-insights/market-updates/notes-on-the-week-ahead/five-scenarios-for-the-federal-debt/",
+      "note": "JPM describes even this as probably optimistic — it assumes no further tax cuts and no additional defence spending."
+    },
+    {
+      "id": "pwbm_ceiling",
+      "label": "Penn Wharton estimated outer limit before debt markets fail to clear",
+      "value": 210,
+      "unit": "percent_of_gdp",
+      "confidence": "projection",
+      "source": "Penn Wharton Budget Model, June 2026",
+      "source_url": "https://budgetmodel.wharton.upenn.edu/p/2026-06-02-when-does-federal-debt-reach-unsustainable-levels/",
+      "note": "A modelled ceiling, not a forecast. PWBM notes markets can unravel earlier if beliefs about repayment shift — the binding constraint is expectations, not arithmetic."
+    }
+  ]
+}
