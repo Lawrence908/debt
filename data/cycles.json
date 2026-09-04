@@ -70,7 +70,7 @@
             "scope": "Four companies: Microsoft, Alphabet, Amazon, Meta. Oracle excluded.",
             "basis": "Cash flow statement purchases of property and equipment, summed",
             "source": "SEC XBRL company facts",
-            "source_url": "https://data.sec.gov/",
+            "source_url": "https://data.sec.gov/api/xbrl/companyconcept/CIK0001652044/us-gaap/PaymentsToAcquirePropertyPlantAndEquipment.json",
             "confidence": "estimate"
           },
           {
@@ -97,7 +97,7 @@
             "scope": "Four companies: Microsoft, Alphabet, Amazon, Meta. Oracle excluded.",
             "basis": "Cash capex, SEC facts summed",
             "source": "SEC XBRL company facts",
-            "source_url": "https://data.sec.gov/",
+            "source_url": "https://data.sec.gov/api/xbrl/companyconcept/CIK0001652044/us-gaap/PaymentsToAcquirePropertyPlantAndEquipment.json",
             "confidence": "estimate"
           },
           {

@@ -7,7 +7,8 @@
     "Every value carries value, unit, as_of, confidence, source and source_url. A value missing as_of or source_url renders with a visible warning rather than rendering clean.",
     "confidence is one of reported (filed or official), estimate (third-party reconstruction), projection (a model). It drives colour and hatching, so mislabelling is a correctness bug.",
     "No figure is typed into markup. Prose interpolates from the data layer.",
-    "A disputed figure gets a sibling disputed field rather than being overwritten."
+    "A disputed figure gets a sibling disputed field rather than being overwritten.",
+    "source_url is stored in canonical form: where a publisher serves the same page at more than one path, use the one its own canonical tag names. The sources list also folds URLs sharing a host and final path segment, keeping the shortest, so a variant that slips in does not list the same article twice."
   ],
   "confidence_levels": {
     "reported": "Filed with a regulator or published by the issuing institution.",

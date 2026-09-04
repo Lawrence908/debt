@@ -1224,11 +1224,39 @@ function publisherOf(url) {
   return known[host] || host;
 }
 
+/* Two URLs for one page, e.g. a publisher serving both a dated and an undated
+   path, would otherwise list the same article twice. Fold them on host plus
+   final path segment and keep the shortest, which is the canonical form in
+   every case seen here and the one a publisher's own canonical tag points at.
+   Deliberately narrow: differing final segments stay separate, so a FRED
+   series page and a data file, or a landing page and its PDF, are untouched. */
+function dedupeSources(found) {
+  var byKey = {}, out = {};
+  Object.keys(found).forEach(function (url) {
+    var rest = url.split("//").pop();
+    var host = rest.split("/")[0].replace(/^www\./, "");
+    var segs = rest.split("/").slice(1).filter(Boolean);
+    var key = host + "|" + (segs.length ? segs[segs.length - 1] : "");
+    if (!byKey[key] || url.length < byKey[key].length) byKey[key] = url;
+  });
+  Object.keys(byKey).forEach(function (key) { out[byKey[key]] = { url: byKey[key], names: {}, series: {} }; });
+  // Merge every variant's names onto the survivor so no attribution is lost.
+  Object.keys(found).forEach(function (url) {
+    var rest = url.split("//").pop();
+    var host = rest.split("/")[0].replace(/^www\./, "");
+    var segs = rest.split("/").slice(1).filter(Boolean);
+    var keep = byKey[host + "|" + (segs.length ? segs[segs.length - 1] : "")];
+    Object.keys(found[url].names).forEach(function (n) { out[keep].names[n] = 1; });
+  });
+  return out;
+}
+
 function sourcesSection() {
   var found = {};
   FILES.forEach(function (f) { collectSources(D[f], found, 0); });
   if (S && S.series) collectSources(S.series, found, 0);
   if (S && S.derived) collectSources(S.derived, found, 0);
+  found = dedupeSources(found);
 
   // Group by publisher, and fold the FRED series into one entry rather than
   // listing fourteen near-identical URLs.
