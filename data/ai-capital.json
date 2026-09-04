@@ -50,6 +50,30 @@
         "source_url": "https://lynkcm.com/ai-data-center-financing-private-credit",
         "note": "Straddles measures A and C — includes some private credit. Kept here as the headline figure most commonly quoted.",
         "disputed": "Mislabelled on two counts. $570B is Morgan Stanley's forecast of 2026 AI-related debt ISSUANCE, a flow, not debt outstanding, a stock; and the attributing source does not appear in the literature, the likely origin being Goldman Sachs strategist Amanda Lynam, who is cited for a separate $489B year-to-date issuance figure. The best-evidenced stock figure is JPMorgan's $1.2T of AI-linked investment-grade debt as of October 2025. See https://finance.yahoo.com/sectors/technology/articles/global-ai-debt-issuance-top-085023868.html and https://structuredfinance.org/ai-becomes-largest-segment-of-investment-grade-debt/"
+      },
+      {
+        "id": "ai_ig_debt_outstanding_2025",
+        "label": "AI-linked debt outstanding in the investment-grade market",
+        "value": 1200,
+        "unit": "USD_billions",
+        "as_of": "2025-10",
+        "confidence": "reported",
+        "scope": "Sector-tagged AI-linked debt within the USD investment-grade market. Excludes high-yield, private credit and everything off balance sheet.",
+        "source": "J.P. Morgan, via Structured Finance Association",
+        "source_url": "https://structuredfinance.org/ai-becomes-largest-segment-of-investment-grade-debt/",
+        "note": "A stock, not a flow. At this level AI became the largest single segment of the investment-grade market at about 14 percent of it. Added because the page previously carried no defensible figure for AI debt outstanding: the number it did carry is a forecast of issuance."
+      },
+      {
+        "id": "hyperscaler_bonds_outstanding_2026",
+        "label": "Hyperscaler senior unsecured bonds outstanding",
+        "value": 520,
+        "unit": "USD_billions",
+        "as_of": "2026-08",
+        "confidence": "reported",
+        "scope": "Senior unsecured hyperscaler bonds held by bond funds, insurers, pension funds and other institutions. The narrowest stock measure on the page.",
+        "source": "Chicago Booth Review",
+        "source_url": "https://www.chicagobooth.edu/review/2026/august/how-worried-should-we-be-about-ai-debt",
+        "note": "The conservative end of the range. Counts bonds only, so no leases, no private credit, no vehicles."
       }
     ],
     "leverage_ratios": {
@@ -156,7 +180,8 @@
           ]
         }
       ]
-    }
+    },
+    "stock_note": "Two stock figures, more than twice apart, and the gap is scope rather than disagreement: one counts hyperscaler bonds, the other every AI-tagged issuer in the investment-grade index. Both are small against the corporate debt market they sit inside, which is what the chart above shows."
   },
   "measure_b_commitments": {
     "label": "Plus signed lease and purchase commitments",
