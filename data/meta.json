@@ -63,6 +63,13 @@
       "cadence": "daily",
       "automatable": "yes",
       "note": "Thirteen FRED series, about 2,900 observations. Rewritten wholesale by the updater and never hand-edited, which is why it is kept out of the curated set."
+    },
+    {
+      "file": "recessions.json",
+      "label": "US and Canadian recession bands",
+      "cadence": "once per business cycle",
+      "automatable": "no",
+      "note": "Vendored from econ-core, not authored here, and never edited in place: re-run econ-core's vendor.sh to update it. US bands derive mechanically from FRED USREC (NBER); Canadian bands are the C.D. Howe Institute Business Cycle Council chronology, which has no API. One dataset shared by every site in the collection, so two pages cannot disagree about when a recession was."
     }
   ],
   "staleness": {
@@ -88,8 +95,13 @@
       "Existing values only. The updater cannot create a series.",
       "Only value and as_of are written; source, source_url, confidence, unit and note survive.",
       "A change beyond max_change_percent is refused and logged.",
-      "as_of never moves backwards, so a lagging upstream cannot downgrade a fresher derived figure."
-    ]
+      "as_of never moves backwards, so a lagging upstream cannot downgrade a fresher derived figure.",
+      "Long series: a series that fails to fetch is carried forward from the last good run, not dropped.",
+      "Long series: a series returning fewer than 90 percent of the stored observations is refused as truncated.",
+      "Long series: a run with nothing fetched and nothing stored refuses to write rather than emptying the file.",
+      "Long series: every already-published observation an upstream restates is diffed and logged as a revision."
+    ],
+    "series_note": "The long series in series.json are machine-owned and rewritten wholesale, so they follow different rules from the curated figures above: nothing is preserved across a run because nothing there is hand-authored. What is guarded instead is that the file never gets worse than what it replaced. Every series is validated against the econ-core contract at write time and a violation raises rather than being written."
   },
   "api_hooks": {
     "treasury_debt_to_the_penny": {
@@ -135,24 +147,26 @@
     }
   },
   "fred_series": {
-    "GFDEGDQ188S": "Total public debt as percent of GDP, quarterly",
-    "GDP": "US nominal gross domestic product, quarterly, billions of dollars",
-    "GFDEBTN": "Total public debt outstanding, quarterly, millions of dollars",
-    "HDTGPDUSQ163N": "US household debt as percent of GDP, BIS basis",
-    "HDTGPDCAQ163N": "Canada household debt as percent of GDP, BIS basis",
-    "TDSP": "US household debt service ratio",
-    "CDSP": "US consumer debt service ratio",
-    "BCNSDODNS": "US nonfinancial corporate debt securities and loans",
-    "FYGFGDQ188S": "US debt held by the public as percent of GDP",
-    "A091RC1Q027SBEA": "US federal interest payments",
-    "POPTHM": "US population, monthly",
-    "POPTOTCAA647NWDB": "Canada population, annual",
-    "MKTGDPCAA646NWDB": "Canada nominal GDP, annual",
-    "DEXCAUS": "Canadian dollars per US dollar, daily"
+    "GFDEGDQ188S": "us_debt_to_gdp_total. Total public debt as percent of GDP, quarterly",
+    "FYGFGDQ188S": "us_debt_held_by_public_pct_gdp. US debt held by the public as percent of GDP",
+    "GDP": "us_gdp_nominal. US nominal gross domestic product, quarterly; published in billions, stored in trillions",
+    "GFDEBTN": "us_total_public_debt. Total public debt outstanding, quarterly; published in millions, stored in trillions",
+    "HDTGPDUSQ163N": "us_household_debt_pct_gdp. US household debt as percent of GDP, BIS basis",
+    "HDTGPDCAQ163N": "ca_household_debt_pct_gdp. Canada household debt as percent of GDP, BIS basis",
+    "TDSP": "us_household_debt_service_ratio. US household debt service ratio",
+    "CDSP": "us_consumer_debt_service_ratio. US consumer debt service ratio",
+    "BCNSDODNS": "us_nonfinancial_corporate_debt. US nonfinancial corporate debt securities and loans; published in millions, stored in trillions",
+    "A091RC1Q027SBEA": "us_federal_interest_payments. US federal interest payments; published in billions, stored in trillions",
+    "POPTHM": "us_population. US population, monthly, thousands of persons",
+    "POPTOTCAA647NWDB": "ca_population. Canada population, annual, persons",
+    "MKTGDPCAA646NWDB": "ca_gdp_nominal_usd. Canada nominal GDP, annual; published in dollars, stored in trillions",
+    "USREC": "Not a series of this app. NBER recession indicator, the source of the US recession bands in recessions.json",
+    "DEXCAUS": "Not a series of this app. Canadian dollars per US dollar, daily; cited by gdp.json"
   },
   "consumed_by": {
     "endpoint": "/api/data",
     "note": "The page fetches one composed payload rather than these files directly. The payload is built from disk and cached on the newest mtime here, so a refresh run from host cron is reflected on the next request without restarting the container.",
     "schedule": "Host crontab, daily 0615 UTC: docker exec debt-updater python /app/server.py --refresh"
-  }
+  },
+  "fred_series_note": "Keys are upstream FRED mnemonics; the value names the econ-core contract id the series is published under in series.json. The two differ deliberately: the overlay site keys on a stable snake_case id, and FRED mnemonics are neither stable nor shared across sources. Where a contract id also names a curated figure it is the same id and the same unit on purpose."
 }

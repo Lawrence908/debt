@@ -7,6 +7,11 @@ __pycache__/
 # NOTE: data/ is deliberately NOT ignored. The JSON files are the spec, and the
 # acceptance criterion is "run the updater, review the log, commit". Runtime
 # artefacts the updater produces are listed individually instead.
+#
+# Two files here are vendored from econ-core rather than authored: data/
+# recessions.json and api/econcore.py. Both are tracked, so the stamp at the top
+# of each travels with the repo and `git log` says which revision this app got.
+# Neither is ever edited in place; re-run econ-core's vendor.sh instead.
 data/*.tmp
 data/updater.log
 # Machine-owned and regenerable: 13 series, ~2900 observations, rewritten

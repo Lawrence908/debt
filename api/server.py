@@ -18,13 +18,18 @@ Writes are guarded three ways:
 HTTP here is read-only. Runs happen on the internal schedule or explicitly via
 `docker exec debt-updater python /app/server.py --once`, so there is no public
 endpoint that can trigger a fetch against the upstream APIs.
+
+Everything that touches FRED goes through econcore, vendored from econ-core.
+That is not just deduplication: fred.stlouisfed.org tarpits User-Agents it does
+not recognise as a known tool, so the keyless CSV endpoint has to be asked with
+urllib's honest default UA. This module used to send its own UA on that path,
+which meant the documented "still works if the key is revoked" fallback had in
+fact never worked -- masked because FRED_API_KEY was set. See econcore._get.
 """
 
 import json
 import os
 import sys
-import csv
-import io
 import threading
 import time
 import urllib.parse
@@ -32,9 +37,9 @@ import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import econcore
+
 TREASURY = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/debt_to_penny"
-FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={}"
-FRED_API = "https://api.stlouisfed.org/fred/series/observations"
 UA = {"User-Agent": "debt.chrislawrence.ca (debt atlas updater)"}
 
 FRED_KEY = os.environ.get("FRED_API_KEY", "").strip()
@@ -48,19 +53,30 @@ STATE_FILE = os.path.join(DATA_DIR, "updater-state.json")
 SERIES_FILE = os.path.join(DATA_DIR, "series.json")
 
 MAX_CHANGE_PCT = 20.0        # refuse a write beyond this; see module docstring
+SHRINK_TOLERANCE = 0.9       # a series that comes back this much shorter is refused
 CHANGELOG_IN_PAYLOAD = 100
 
-# Curated files, in the order the page expects them.
-CURATED = ["meta", "gdp", "federal-debt", "ai-capital", "household-debt", "cycles"]
+# Curated files, in the order the page expects them. `recessions` is vendored
+# from econ-core rather than researched here, but it is read-only to this app
+# in exactly the way the curated files are, so it rides the same path.
+CURATED = ["meta", "gdp", "federal-debt", "ai-capital", "household-debt",
+           "cycles", "recessions"]
 
 _payload_cache = {"stamp": None, "body": None}
 
-_state = {"last_run": None, "last_error": None, "failures": 0, "results": []}
+# `results` is the curated half, `series_results` the long-series half. They are
+# separate because refresh_all runs both and a shared key would leave whichever
+# ran first invisible in /api/status.
+_state = {"last_run": None, "last_error": None, "failures": 0,
+          "results": [], "series_results": []}
 _lock = threading.Lock()
 
 
 # --------------------------------------------------------------------------
 # fetching
+#
+# FRED goes through econcore. This local _get exists only for Treasury, which
+# has no such filter and gets this app's own honest User-Agent.
 # --------------------------------------------------------------------------
 
 def _get(url):
@@ -69,53 +85,17 @@ def _get(url):
         return resp.read().decode("utf-8")
 
 
-def fred_series(series_id):
-    """Return {date: float} for one FRED series, newest last.
-
-    Uses the keyed JSON API when FRED_API_KEY is set and falls back to the
-    keyless CSV endpoint otherwise, so the updater still works if the key is
-    ever revoked rather than failing the whole run.
-    """
-    if FRED_KEY:
-        params = urllib.parse.urlencode({
-            "series_id": series_id,
-            "api_key": FRED_KEY,
-            "file_type": "json",
-        })
-        body = json.loads(_get("%s?%s" % (FRED_API, params)))
-        out = {}
-        for row in body.get("observations", []):
-            if row.get("value") in (None, "", "."):
-                continue
-            try:
-                out[row["date"]] = float(row["value"])
-            except (TypeError, ValueError):
-                continue
-        if out:
-            return out
-        # An empty keyed response is more likely a bad key than an empty
-        # series, so fall through to the keyless endpoint rather than raise.
-
-    out = {}
-    reader = csv.reader(io.StringIO(_get(FRED_CSV.format(series_id))))
-    next(reader)
-    for row in reader:
-        if len(row) < 2 or row[1].strip() in ("", "."):
-            continue
-        try:
-            out[row[0].strip()] = float(row[1].strip())
-        except ValueError:
-            continue
-    if not out:
-        raise ValueError("no observations for %s" % series_id)
-    return out
+def fred_obs(series_id):
+    """[[iso_date, float], ...] ascending, via the shared fetcher."""
+    return econcore.fred_series(series_id, FRED_KEY)
 
 
 def fred_latest(series_id):
     """(value, observation_date) for the most recent observation."""
-    obs = fred_series(series_id)
-    date = max(obs)
-    return obs[date], date
+    obs = fred_obs(series_id)
+    if not obs:
+        raise ValueError("no observations for %s" % series_id)
+    return obs[-1][1], obs[-1][0]
 
 
 def quarter_label(iso_date):
@@ -212,59 +192,97 @@ MANUAL_TARGETS = [
 # can overwrite a researched figure.
 # --------------------------------------------------------------------------
 
-SERIES = [
-    ("GFDEGDQ188S", "US total public debt", "percent_of_gdp",
-     "Federal debt including intragovernmental holdings. The number cable news quotes."),
-    ("FYGFGDQ188S", "US debt held by the public", "percent_of_gdp",
-     "Excludes money the government owes itself. The measure CBO and most economists use."),
-    ("GDP", "US nominal GDP", "USD_billions", "Quarterly, seasonally adjusted annual rate."),
-    ("GFDEBTN", "US total public debt outstanding", "USD_millions", "Quarterly level."),
-    ("HDTGPDUSQ163N", "US household debt", "percent_of_gdp",
-     "BIS basis. Directly comparable with the Canadian series below, which the national collections are not."),
-    ("HDTGPDCAQ163N", "Canada household debt", "percent_of_gdp",
-     "BIS basis, same methodology as the US series."),
-    ("TDSP", "US household debt service ratio", "percent",
-     "Required debt payments as a share of disposable personal income. The US counterpart to StatCan's DSR."),
-    ("CDSP", "US consumer debt service ratio", "percent", "Non-mortgage consumer debt only."),
-    ("BCNSDODNS", "US nonfinancial corporate debt", "USD_millions",
-     "All debt securities and loans of nonfinancial corporate business. The denominator that puts AI borrowing in proportion."),
-    ("A091RC1Q027SBEA", "US federal interest payments", "USD_billions", "Annual rate, quarterly observations."),
-    ("POPTHM", "US population", "thousands", "Monthly."),
-    ("POPTOTCAA647NWDB", "Canada population", "persons", "World Bank, annual."),
-    ("MKTGDPCAA646NWDB", "Canada nominal GDP", "USD", "World Bank, annual, market exchange rates."),
+# Keyed by the econ-core contract id, not by the upstream FRED id, because the
+# overlay site keys on a stable snake_case id and FRED's mnemonics are neither
+# stable nor shared. The FRED id survives in `source` and `source_url`.
+#
+# Two rules make these series comparable with the curated files and with the
+# other trackers:
+#
+#   * where a series names the same quantity as a curated figure it reuses that
+#     figure's id AND its unit -- `us_gdp_nominal` is the same thing in gdp.json
+#     and here, so one id cannot carry two units;
+#   * `scale` converts at fetch time, never at render time (CONTRACT.md). FRED
+#     publishes these levels in millions and billions; the page compares them
+#     against each other in trillions, and doing that arithmetic in the renderer
+#     is how a chart ends up off by a thousand.
+
+FETCHED = [
+    {"fred": "GFDEGDQ188S", "id": "us_debt_to_gdp_total",
+     "label": "US total public debt", "units": "percent", "freq": "quarterly",
+     "note": "Federal debt including intragovernmental holdings. The number cable news quotes."},
+    {"fred": "FYGFGDQ188S", "id": "us_debt_held_by_public_pct_gdp",
+     "label": "US debt held by the public", "units": "percent_of_gdp", "freq": "quarterly",
+     "note": "Excludes money the government owes itself. The measure CBO and most economists use."},
+    {"fred": "GDP", "id": "us_gdp_nominal", "scale": 1e-3,
+     "label": "US nominal GDP", "units": "USD_trillions", "freq": "quarterly",
+     "note": "Quarterly, seasonally adjusted annual rate. FRED publishes billions; converted here."},
+    {"fred": "GFDEBTN", "id": "us_total_public_debt", "scale": 1e-6,
+     "label": "US total public debt outstanding", "units": "USD_trillions", "freq": "quarterly",
+     "note": "Quarterly level. FRED publishes millions; converted here."},
+    {"fred": "HDTGPDUSQ163N", "id": "us_household_debt_pct_gdp",
+     "label": "US household debt", "units": "percent_of_gdp", "freq": "quarterly",
+     "note": "BIS basis. Directly comparable with the Canadian series below, which the national collections are not."},
+    {"fred": "HDTGPDCAQ163N", "id": "ca_household_debt_pct_gdp",
+     "label": "Canada household debt", "units": "percent_of_gdp", "freq": "quarterly",
+     "note": "BIS basis, same methodology as the US series."},
+    {"fred": "TDSP", "id": "us_household_debt_service_ratio",
+     "label": "US household debt service ratio", "units": "percent", "freq": "quarterly",
+     "note": "Required debt payments as a share of disposable personal income. The US counterpart to StatCan's DSR."},
+    {"fred": "CDSP", "id": "us_consumer_debt_service_ratio",
+     "label": "US consumer debt service ratio", "units": "percent", "freq": "quarterly",
+     "note": "Non-mortgage consumer debt only."},
+    {"fred": "BCNSDODNS", "id": "us_nonfinancial_corporate_debt", "scale": 1e-6,
+     "label": "US nonfinancial corporate debt", "units": "USD_trillions", "freq": "quarterly",
+     "note": "All debt securities and loans of nonfinancial corporate business. The denominator that "
+             "puts AI borrowing in proportion. FRED publishes millions; converted here."},
+    {"fred": "A091RC1Q027SBEA", "id": "us_federal_interest_payments", "scale": 1e-3,
+     "label": "US federal interest payments", "units": "USD_trillions", "freq": "quarterly",
+     "note": "Annual rate, quarterly observations. FRED publishes billions; converted here."},
+    {"fred": "POPTHM", "id": "us_population",
+     "label": "US population", "units": "thousands_of_persons", "freq": "monthly",
+     "note": "Monthly."},
+    {"fred": "POPTOTCAA647NWDB", "id": "ca_population",
+     "label": "Canada population", "units": "persons", "freq": "annual",
+     "note": "World Bank, annual."},
+    {"fred": "MKTGDPCAA646NWDB", "id": "ca_gdp_nominal_usd", "scale": 1e-12,
+     "label": "Canada nominal GDP", "units": "USD_trillions", "freq": "annual",
+     "note": "World Bank, annual, market exchange rates. Published in dollars; converted here."},
 ]
 
 
 def build_series():
-    """Fetch every long series. A failure on one is recorded, not fatal."""
+    """Fetch every long series. A failure on one is recorded, not fatal.
+
+    Every entry is assembled by econcore.make_series, which validates against
+    the shared contract and raises rather than returning something malformed --
+    so a broken series is caught by the updater that produced it instead of by
+    the page that tries to draw it.
+    """
     out = {}
     errors = {}
-    for series_id, label, unit, note in SERIES:
+    for spec in FETCHED:
+        sid = spec["id"]
         try:
-            obs = fred_series(series_id)
-            dates = sorted(obs)
-            out[series_id] = {
-                "label": label,
-                "unit": unit,
-                "note": note,
-                "source": "FRED " + series_id,
-                "source_url": "https://fred.stlouisfed.org/series/" + series_id,
-                "confidence": "reported",
-                "as_of": dates[-1],
-                "dates": dates,
-                "values": [obs[d] for d in dates],
-            }
+            obs = fred_obs(spec["fred"])
+            scale = spec.get("scale")
+            if scale:
+                obs = [[d, round(v * scale, 9)] for d, v in obs]
+            out[sid] = econcore.make_series(
+                sid, spec["label"], "FRED " + spec["fred"],
+                "https://fred.stlouisfed.org/series/" + spec["fred"],
+                spec["units"], spec["freq"], obs, note=spec["note"])
         except Exception as exc:  # noqa: BLE001 - one dead series must not sink the rest
-            errors[series_id] = "%s: %s" % (type(exc).__name__, exc)
-            print("series %s failed: %s" % (series_id, errors[series_id]), flush=True)
+            errors[sid] = "%s: %s" % (type(exc).__name__, exc)
+            print("series %s failed: %s" % (sid, errors[sid]), flush=True)
     return out, errors
 
 
 def latest(series, series_id):
     entry = series.get(series_id)
-    if not entry or not entry["values"]:
+    if not entry or not entry.get("obs"):
         return None, None
-    return entry["values"][-1], entry["as_of"]
+    return entry["obs"][-1][1], entry["as_of"]
 
 
 def derive(series, curated):
@@ -274,8 +292,8 @@ def derive(series, curated):
     arithmetic instead of trusting it.
     """
     out = {}
-    us_pop, us_pop_date = latest(series, "POPTHM")          # thousands
-    ca_pop, ca_pop_date = latest(series, "POPTOTCAA647NWDB")  # persons
+    us_pop, us_pop_date = latest(series, "us_population")   # thousands of persons
+    ca_pop, ca_pop_date = latest(series, "ca_population")   # persons
 
     us_debt = curated.get("household-debt.json", {}).get("united_states", {}).get("total_debt", {})
     if us_pop and us_debt.get("value"):
@@ -305,10 +323,102 @@ def derive(series, curated):
     return out
 
 
+def load_old_series():
+    """The previously written series map, or {} when there is none.
+
+    Entries that predate the contract migration are dropped: they carry
+    `dates`/`values` instead of `obs`, and carrying one forward would write an
+    old-shaped doc back into a contract-shaped file.
+    """
+    try:
+        with open(SERIES_FILE) as fh:
+            stored = json.load(fh).get("series", {})
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in stored.items() if isinstance(v, dict) and v.get("obs")}
+
+
+def diff_revisions(series_id, before, after):
+    """A record of every already-published observation whose value moved.
+
+    New observations at the end are not revisions, they are just new. What
+    matters here is upstream restating history: it happens quietly, and without
+    this the wholesale rewrite would leave no trace that it did.
+    """
+    old = dict(before)
+    changed = []
+    for date, value in after:
+        if date in old and old[date] != value:
+            changed.append((date, old[date], value))
+    if not changed:
+        return None
+    deltas = [abs(a - b) for _, b, a in changed]
+    return {
+        "series": series_id, "action": "revised", "changed": len(changed),
+        "span": [changed[0][0], changed[-1][0]],
+        "max_delta": round(max(deltas), 6),
+        "sample": [{"date": d, "before": b, "after": a} for d, b, a in changed[:3]],
+    }
+
+
 def refresh_series():
+    """Fetch every long series, guarded, and rewrite series.json wholesale.
+
+    Three guardrails, all of which exist because "the file was rewritten and the
+    run reported success" is not the same as "the data is good":
+
+      * a series that fails to fetch is carried forward from the last good run
+        rather than vanishing from the file until the next one succeeds;
+      * a series that comes back more than SHRINK_TOLERANCE shorter than the
+        stored one is refused -- a truncated response is indistinguishable from
+        a real series until you compare lengths;
+      * a run that has nothing fetched and nothing stored refuses to write at
+        all, rather than replacing the file with an empty one.
+    """
     series, errors = build_series()
+    previous = load_old_series()
+    results = []
+
+    for spec in FETCHED:
+        sid = spec["id"]
+        prev, fresh = previous.get(sid), series.get(sid)
+        rec = {"series": sid}
+
+        if fresh is None:
+            if prev:
+                series[sid] = dict(prev, carried_forward=True)
+                rec.update(action="carried-forward", reason=errors.get(sid, "fetch failed"))
+            else:
+                rec.update(action="error", reason=errors.get(sid, "fetch failed"))
+        elif prev and prev.get("obs"):
+            if fresh["as_of"] < prev["as_of"]:
+                series[sid] = dict(prev, carried_forward=True)
+                rec.update(action="stale-upstream",
+                           reason="upstream is at %s, behind the stored %s; stored series kept"
+                                  % (fresh["as_of"], prev["as_of"]))
+            elif len(fresh["obs"]) < len(prev["obs"]) * SHRINK_TOLERANCE:
+                series[sid] = dict(prev, carried_forward=True)
+                rec.update(action="shrunk",
+                           reason="%d observations against the stored %d; stored series kept"
+                                  % (len(fresh["obs"]), len(prev["obs"])))
+            else:
+                revision = diff_revisions(sid, prev["obs"], fresh["obs"])
+                if revision:
+                    econcore.log_revision(CHANGELOG, revision)
+                    rec.update(action="revised", changed=revision["changed"],
+                               reason="upstream restated %d observation(s)" % revision["changed"])
+                else:
+                    rec.update(action="fetched", observations=len(fresh["obs"]))
+        else:
+            rec.update(action="fetched", observations=len(fresh["obs"]))
+
+        results.append(rec)
+        if rec["action"] not in ("fetched",):
+            print("series %-34s %-16s %s" % (sid, rec["action"], rec.get("reason", "")), flush=True)
+
     if not series:
-        raise ValueError("no series fetched")
+        raise ValueError("nothing fetched and nothing stored; refusing to write")
+
     curated = {}
     for name in ("household-debt.json",):
         try:
@@ -318,6 +428,8 @@ def refresh_series():
     payload = {
         "fetched_at": datetime.now(timezone.utc).isoformat(),
         "note": "Machine-fetched long series. Never hand-edited; the updater overwrites this file wholesale.",
+        "econcore": econcore.VERSION,
+        "fred_key_used": bool(FRED_KEY),
         "errors": errors,
         "derived": derive(series, curated),
         "series": series,
@@ -327,9 +439,14 @@ def refresh_series():
         json.dump(payload, fh, separators=(",", ":"))
     os.chmod(tmp, 0o644)
     os.replace(tmp, SERIES_FILE)
-    total = sum(len(s["values"]) for s in series.values())
+    total = sum(len(s["obs"]) for s in series.values())
     print("series refreshed: %d series, %d observations, %d errors"
           % (len(series), total, len(errors)), flush=True)
+
+    with _lock:
+        _state["last_run"] = datetime.now(timezone.utc).isoformat()
+        _state["series_results"] = results
+    save_state(["series_results"])
     return payload
 
 
@@ -353,31 +470,17 @@ def save(name, doc):
     os.replace(tmp, path)
 
 
+# One log, two record shapes. A curated record names one figure and carries a
+# single before/after; a series record names a series and carries a sample of
+# the observations upstream restated. econcore.log_revision only stamps
+# observed_at, so both coexist and the page renders them apart.
+
 def log_change(rec):
-    rec = dict(rec, observed_at=datetime.now(timezone.utc).isoformat())
-    with open(CHANGELOG, "a") as fh:
-        fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
-    try:
-        os.chmod(CHANGELOG, 0o644)
-    except OSError:
-        pass
-    return rec
+    return econcore.log_revision(CHANGELOG, rec)
 
 
 def read_changelog(limit):
-    if not os.path.exists(CHANGELOG):
-        return [], 0
-    out = []
-    with open(CHANGELOG) as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                out.append(json.loads(line))
-            except ValueError:
-                continue
-    return list(reversed(out[-limit:])), len(out)
+    return econcore.read_revisions(CHANGELOG, limit)
 
 
 def pct_change(before, after):
@@ -486,7 +589,7 @@ def run_once(write=None, verbose=True):
     with _lock:
         _state["last_run"] = datetime.now(timezone.utc).isoformat()
         _state["results"] = results
-    save_state()
+    save_state(["results"])
     return results
 
 
@@ -500,10 +603,42 @@ def stamp_built():
         print("could not stamp built: %s" % exc, flush=True)
 
 
-def save_state():
+def read_state():
+    """The last run's state, preferring the file over this process's memory.
+
+    Both halves of a run write STATE_FILE, and a `docker exec ... --refresh`
+    writes it from a process that shares nothing with the HTTP server. The file
+    is therefore the newer of the two whenever cron has run at all; memory is
+    the fallback for a fresh container that has not yet written one.
+    """
     try:
+        with open(STATE_FILE) as fh:
+            stored = json.load(fh)
+        if isinstance(stored, dict) and stored.get("last_run"):
+            return stored
+    except (OSError, ValueError):
+        pass
+    with _lock:
+        return dict(_state)
+
+
+def save_state(keys):
+    """Merge this run's half into the stored state.
+
+    `--series` and `--once` each fill one half and leave the other empty, and
+    they run as separate processes. Writing the whole in-memory _state would
+    have a series-only run report "no curated results" simply because it never
+    looked, so only the keys the caller actually produced are written.
+    """
+    try:
+        stored = read_state()
         with _lock:
             snapshot = dict(_state)
+        merged = dict(stored)
+        for key in keys:
+            merged[key] = snapshot.get(key)
+        merged["last_run"] = snapshot.get("last_run") or stored.get("last_run")
+        snapshot = merged
         tmp = STATE_FILE + ".tmp"
         with open(tmp, "w") as fh:
             json.dump(snapshot, fh, indent=2)
@@ -533,7 +668,7 @@ def backfill_historical(write=False):
     in 1966) and comes from OMB historical tables; 1974, 2007 and 2021 are
     already exact dated reads; 2026 tracks the live headline series.
     """
-    obs = fred_series("GFDEGDQ188S")
+    obs = dict(fred_obs("GFDEGDQ188S"))
     doc = load("federal-debt.json")
     hist = doc.get("historical", {})
     points = hist.get("points", [])
@@ -648,6 +783,8 @@ def build_data_payload():
         payload["series"] = series.get("series", {})
         payload["derived"] = series.get("derived", {})
         payload["series_fetched_at"] = series.get("fetched_at")
+        payload["series_errors"] = series.get("errors", {})
+        payload["econcore"] = series.get("econcore")
     except Exception as exc:  # noqa: BLE001 - charts degrade, the page still renders
         payload["series"] = {}
         payload["derived"] = {}
@@ -681,12 +818,18 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, build_data_payload(),
                        cache="public, max-age=300, must-revalidate")
         elif path == "/api/status":
-            with _lock:
-                snapshot = dict(_state)
+            # From disk, for the same reason /api/data is composed from disk:
+            # the refresh that matters runs in another process via docker exec,
+            # so this process's in-memory _state only ever reflects its own
+            # startup run. Serving that would report a months-old result behind
+            # a healthy endpoint while the real run's state sat on disk.
+            snapshot = read_state()
             snapshot["write_enabled"] = WRITE_ENABLED
             snapshot["fred_key"] = bool(FRED_KEY)
+            snapshot["econcore"] = econcore.VERSION
             snapshot["manual_targets"] = MANUAL_TARGETS
             snapshot["max_change_percent"] = MAX_CHANGE_PCT
+            snapshot["shrink_tolerance"] = SHRINK_TOLERANCE
             self._send(200, snapshot)
         elif path == "/api/changelog":
             recent, total = read_changelog(CHANGELOG_IN_PAYLOAD)

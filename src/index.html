@@ -24,6 +24,9 @@
   --tooltip-bg: rgba(252,252,251,0.97);
   --warn: #b3541e;
   --hatch: rgba(252,252,251,0.55);
+  /* Recession shading. Low enough that a band reads as context behind the
+     line rather than as a second series competing with it. */
+  --band-alpha: 0.09;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -43,6 +46,8 @@
     --tooltip-bg: rgba(26,26,25,0.97);
     --warn: #e08a4f;
     --hatch: rgba(13,13,13,0.55);
+    /* Lifted on dark: the same alpha over a dark plane is nearly invisible. */
+    --band-alpha: 0.15;
   }
 }
 :root[data-theme="dark"] {
@@ -62,6 +67,7 @@
   --tooltip-bg: rgba(26,26,25,0.97);
   --warn: #e08a4f;
   --hatch: rgba(13,13,13,0.55);
+  --band-alpha: 0.15;
 }
 
 /* Confidence is load-bearing, not decorative. These three are derived from
@@ -92,11 +98,12 @@ a { color: var(--series-1); text-underline-offset: 2px; }
 
 /* ---------- masthead ---------- */
 
-.topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 header h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.02em; }
 header p.sub { margin: 0; color: var(--text-secondary); max-width: 62ch; }
 .stamp { margin-top: 10px; font-size: 0.82rem; color: var(--muted); }
 .stamp .stale { color: var(--warn); font-weight: 600; }
+.muted { color: var(--muted); }
 
 button.theme {
   font: inherit; font-size: 0.82rem; padding: 5px 11px; cursor: pointer; flex: none;
@@ -104,6 +111,20 @@ button.theme {
   border: 1px solid var(--border); border-radius: 999px;
 }
 button.theme:hover { background: var(--grid); }
+
+/* Recession toggles. Swatches carry the band colours so the control explains
+   the shading rather than just switching it. */
+.bandctl { display: flex; align-items: center; gap: 6px; flex: none; flex-wrap: wrap; }
+.bandctl .lbl {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); margin-right: 2px;
+}
+.bandctl .seg::before {
+  content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+  margin-right: 6px; vertical-align: -1px;
+}
+.bandctl [data-band="us"]::before { background: var(--series-1); }
+.bandctl [data-band="ca"]::before { background: var(--series-2); }
 
 /* ---------- tiles ---------- */
 
@@ -258,6 +279,11 @@ details.fallback[open] summary { margin-bottom: 8px; }
     <p class="sub">AI capital, sovereign debt and household balance sheets, put on the same axis. Every figure carries the date it was true and the place it came from.</p>
     <p class="stamp num" id="stamp"></p>
   </header>
+  <div class="bandctl">
+    <span class="lbl">Recession shading</span>
+    <button class="seg" data-band="us" type="button" aria-pressed="true">US</button>
+    <button class="seg" data-band="ca" type="button" aria-pressed="true">Canada</button>
+  </div>
   <button class="theme" id="theme-toggle" type="button" aria-label="Switch colour theme">Theme</button>
 </div>
 
@@ -288,13 +314,26 @@ details.fallback[open] summary { margin-bottom: 8px; }
 (function () {
 "use strict";
 
-var FILES = ["meta", "gdp", "federal-debt", "ai-capital", "household-debt", "cycles"];
+/* `recessions` is vendored from econ-core, not researched here, but it rides
+   the same path as the curated files so its two sources land in the sources
+   list automatically: a mark on a chart with no citation cannot exist. */
+var FILES = ["meta", "gdp", "federal-debt", "ai-capital", "household-debt", "cycles", "recessions"];
 var charts = [];   // every Chart, so resize and theme changes reach all of them
 var D = null;      // loaded data layer
 var S = null;      // series.json, machine-fetched long series
 
 function css(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/* A CSS hex from the palette at a given alpha. Canvas has no notion of the
+   custom properties, so a band colour has to be resolved to rgba() here. */
+function rgba(hex, alpha) {
+  var h = String(hex).trim().replace("#", "");
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  if (h.length !== 6) return hex;
+  return "rgba(" + parseInt(h.slice(0, 2), 16) + "," + parseInt(h.slice(2, 4), 16) +
+    "," + parseInt(h.slice(4, 6), 16) + "," + alpha + ")";
 }
 
 function esc(s) {
@@ -322,6 +361,8 @@ function money(v, unit) {
   if (unit === "CAD") return "C$" + commas(Math.round(v));
   if (unit === "ratio") return v + "×";
   if (unit === "thousands") return commas(Math.round(v)) + "k";
+  if (unit === "thousands_of_persons") return commas(Math.round(v * 1000));
+  if (unit === "persons") return commas(Math.round(v));
   return String(v);
 }
 
@@ -504,9 +545,10 @@ Chart.prototype.clearHover = function () {
   this.draw();
 };
 
-Chart.prototype.setData = function (xs, series) {
+Chart.prototype.setData = function (xs, series, bands) {
   this.xs = xs || [];
   this.series = series || [];
+  this.bands = bands || [];
   this.hover = null;
   this.draw();
 };
@@ -550,6 +592,15 @@ Chart.prototype.draw = function () {
   }.bind(this);
   var Y = function (val) { return g.bottom - ((val - lo) / (hi - lo)) * (g.bottom - g.top); };
   var unit = this.opts.unit;
+
+  // Recession bands first, so every other mark sits on top of them. A band is
+  // context for the line, never something drawn over it.
+  var bands = this.bands || [];
+  for (i = 0; i < bands.length; i++) {
+    var bx0 = X(bands[i].start), bx1 = X(bands[i].end);
+    ctx.fillStyle = bands[i].fill;
+    ctx.fillRect(bx0, g.top, Math.max(1, bx1 - bx0), g.bottom - g.top);
+  }
 
   // y grid
   ctx.font = "11px system-ui, sans-serif";
@@ -907,19 +958,30 @@ function measuresSection() {
 /* Align several FRED series onto one date axis. Dates present in one series
    and not another yield null there, which the renderer leaves as a gap. */
 function align(ids) {
-  var dates = {}, i;
+  var dates = {};
   ids.forEach(function (id) {
     var s = S.series[id];
-    if (s) s.dates.forEach(function (d) { dates[d] = 1; });
+    if (s) s.obs.forEach(function (o) { dates[o[0]] = 1; });
   });
   var xs = Object.keys(dates).sort();
   var out = ids.map(function (id) {
     var s = S.series[id], by = {};
-    if (s) for (i = 0; i < s.dates.length; i++) by[s.dates[i]] = s.values[i];
+    if (s) s.obs.forEach(function (o) { by[o[0]] = o[1]; });
     return { id: id, name: s ? s.label : id, values: xs.map(function (d) {
       return by[d] === undefined ? null : by[d]; }) };
   });
   return { xs: xs, series: out };
+}
+
+/* {year: value} from a contract series, taking the highest reading in each
+   year. Used where an annual figure is compared against a quarterly series. */
+function byYear(entry) {
+  var out = {};
+  if (entry) entry.obs.forEach(function (o) {
+    var y = +o[0].slice(0, 4);
+    out[y] = Math.max(out[y] === undefined ? -Infinity : out[y], o[1]);
+  });
+  return out;
 }
 
 /* 3. Federal */
@@ -947,7 +1009,7 @@ function federalSection() {
     '<button class="seg" data-fed="public" aria-pressed="false">Held by the public</button></div></div>' +
     '<div id="lg-fed" class="legend"></div>' +
     '<div class="plot"><canvas id="c-fed" height="320" role="img" ' +
-    'aria-label="US federal debt as a share of GDP, quarterly from 1966. A postwar low near 32 percent in 1974, rising through the 1980s, a pandemic peak above 130 percent in 2021, and roughly 123 percent now."></canvas>' +
+    'aria-label="US federal debt as a share of GDP, quarterly from 1966. A postwar low near 32 percent in 1974, rising through the 1980s, a pandemic peak above 130 percent in 2021, and roughly 123 percent now. Shaded vertical bands mark US recessions."></canvas>' +
     '<div class="tooltip" id="t-fed"></div></div>' +
     '<details class="fallback"><summary>Decade ends as a table</summary>' +
     '<div class="tablewrap"><table id="tbl-fed"></table></div></details></div>' +
@@ -987,7 +1049,7 @@ function householdsSection() {
     '<button class="seg" data-hh="dsr" aria-pressed="false">Debt service</button></div></div>' +
     '<div id="lg-hh" class="legend"></div>' +
     '<div class="plot"><canvas id="c-hh" height="300" role="img" ' +
-    'aria-label="Household debt as a share of GDP for the United States and Canada on the BIS basis, quarterly from 2005. Canada sits far above the United States throughout and the gap widens after 2008."></canvas>' +
+    'aria-label="Household debt as a share of GDP for the United States and Canada on the BIS basis, quarterly from 2005. Canada sits far above the United States throughout and the gap widens after 2008. Shaded vertical bands mark recessions, blue for the United States and orange for Canada."></canvas>' +
     '<div class="tooltip" id="t-hh"></div></div>' +
     '<p class="note">' + prov(D["household-debt"].comparable_basis, true) + "</p></div>" +
 
@@ -1105,8 +1167,23 @@ function changedSection(log) {
   var rows = "";
   if (log && log.recent && log.recent.length) {
     rows = log.recent.filter(function (r) {
-      return r.action === "written" || r.action === "blocked" || r.action === "stale-upstream";
+      return r.action === "written" || r.action === "blocked" ||
+             r.action === "stale-upstream" || r.action === "revised";
     }).slice(0, 12).map(function (r) {
+      // Two record shapes share one log. A curated record names a single
+      // figure and carries one before/after; a series record names a long
+      // series and carries a sample of the observations upstream restated.
+      // The suffix matters because the two namespaces overlap deliberately:
+      // us_gdp_nominal is both a curated figure and a series.
+      if (r.action === "revised" && r.series) {
+        var s0 = (r.sample && r.sample[0]) || {};
+        return "<tr><td>" + esc(r.series) + " <span class=\"muted\">(series)</span></td><td>" +
+          (s0.before === undefined ? "" : esc(String(s0.before))) + "</td><td>" +
+          (s0.after === undefined ? "" : esc(String(s0.after))) + "</td><td>" +
+          esc((r.span && r.span[1]) || "") + '</td><td class="t">revised. ' +
+          esc(r.changed + " observation" + (r.changed === 1 ? "" : "s") +
+              " restated, largest move " + r.max_delta) + "</td></tr>";
+      }
       return "<tr><td>" + esc(r.label || r.key) + "</td><td>" +
         (r.before === undefined ? "" : esc(String(r.before))) + "</td><td>" +
         (r.after === undefined ? "" : esc(String(r.after))) + "</td><td>" +
@@ -1126,7 +1203,12 @@ function changedSection(log) {
     esc(String(D.meta.updater.max_change_percent)) + ' percent is logged and refused rather than written, ' +
     'because these series do not move that fast: a jump that large means an endpoint changed, not that the ' +
     'world did. A refresh that would drag a date backwards is refused too. The updater can only change ' +
-    "figures that already exist; adding one is a human decision.</p></div>" +
+    "figures that already exist; adding one is a human decision.</p>" +
+    '<p class="note">Rows marked <em>series</em> come from the other half of the log. The long series ' +
+    'are rewritten wholesale on every run, so each run is diffed against the one before it and any ' +
+    'already-published observation that upstream has since restated is recorded here. A revision is ' +
+    'not a new reading at the end of the series; it is history changing underneath a number this page ' +
+    "had already shown.</p></div>" +
 
     '<div class="card"><h2>Sources and method</h2>' +
     '<p class="prose">Federal debt comes from the US Treasury and the St Louis Fed. GDP, corporate debt, ' +
@@ -1169,7 +1251,7 @@ function corporateSection() {
     '<button class="seg" data-corp="gdp" aria-pressed="false">Share of GDP</button></div></div>' +
     '<div id="lg-corp" class="legend"></div>' +
     '<div class="plot"><canvas id="c-corp" height="300" role="img" ' +
-    'aria-label="US nonfinancial corporate debt, quarterly since 1945. The level rises steadily to about 14 and a half trillion dollars; as a share of GDP it moves in cycles, peaking around recessions."></canvas>' +
+    'aria-label="US nonfinancial corporate debt, quarterly since 1945. The level rises steadily to about 14 and a half trillion dollars; as a share of GDP it moves in cycles, peaking around recessions, which are marked by shaded vertical bands."></canvas>' +
     '<div class="tooltip" id="t-corp"></div></div></div>' +
 
     '<div class="card"><h2>AI debt as a share of it</h2>' +
@@ -1338,6 +1420,17 @@ function sourcesSection() {
   if (S && S.derived) collectSources(S.derived, found, 0);
   found = dedupeSources(found);
 
+  // Series are keyed by contract id, but this list groups by the FRED mnemonic
+  // parsed back out of the source URL. Index the series by their own upstream
+  // id so the label and note still resolve: the ids stopped matching when the
+  // series moved onto the shared contract, and a plain S.series[fredId] lookup
+  // would return undefined and drop every annotation without erroring.
+  var byFredId = {};
+  Object.keys((S && S.series) || {}).forEach(function (k) {
+    var mm = String(S.series[k].source_url || "").match(/fred\.stlouisfed\.org\/series\/([A-Z0-9]+)/);
+    if (mm) byFredId[mm[1]] = S.series[k];
+  });
+
   // Group by publisher, and fold the FRED series into one entry rather than
   // listing fourteen near-identical URLs.
   var groups = {};
@@ -1351,7 +1444,7 @@ function sourcesSection() {
     }
     if (!groups[pub]) groups[pub] = { entries: [], fred: [] };
     var m = url.match(/fred\.stlouisfed\.org\/series\/([A-Z0-9]+)/);
-    if (m) groups[pub].fred.push({ id: m[1], url: url });
+    if (m) groups[pub].fred.push({ id: m[1], url: url, entry: byFredId[m[1]], names: names });
     else groups[pub].entries.push({ url: url, names: Object.keys(found[url].names) });
   });
 
@@ -1361,8 +1454,12 @@ function sourcesSection() {
     if (g.fred.length) {
       g.fred.sort(function (a, b) { return a.id < b.id ? -1 : 1; });
       inner += "<ul>" + g.fred.map(function (s) {
-        var label = (S.series[s.id] && S.series[s.id].label) || "";
-        var note = (S.series[s.id] && S.series[s.id].note) || "";
+        // Not every FRED URL on the page belongs to one of this app's series:
+        // the CAD/USD rate and the recession source are cited by the curated
+        // and vendored files. Those fall back to the name the citing data gives
+        // them rather than rendering as a bare mnemonic.
+        var label = (s.entry && s.entry.label) || s.names[0] || "";
+        var note = (s.entry && s.entry.note) || "";
         return '<li><a href="' + esc(s.url) + '" rel="noopener"><code>' + esc(s.id) + "</code></a>" +
           (label ? " " + esc(label) : "") + (note ? ". " + esc(note) : "") + "</li>";
       }).join("") + "</ul>";
@@ -1413,6 +1510,13 @@ function sourcesSection() {
     "Bank of America and Nikkei cover the identical five companies one month apart and differ by " +
     "39 percent, which rules out both elapsed time and company count. The variation is " +
     "definitional, so the values are ordered by definitional breadth rather than by date.</li>" +
+    "<li><strong>Recession shading.</strong> US bands are derived mechanically from NBER dates via " +
+    'FRED USREC: the peak month through the trough month, inclusive. Canadian bands are the ' +
+    "C.D. Howe Institute Business Cycle Council chronology, which has no API and is curated with " +
+    "citations. Both come from one dataset shared by every site in this collection, so two pages " +
+    "cannot disagree about when a recession was. On a quarterly axis a band edge is interpolated " +
+    "between the observations either side of it rather than snapped to one, so a two-month " +
+    "recession is not widened into a quarter.</li>" +
     "<li><strong>Two definitions of federal debt.</strong> Total public debt outstanding includes " +
     "money the government owes itself; debt held by the public does not. They differ by more " +
     "than 20 points of GDP. Both are charted.</li>" +
@@ -1479,9 +1583,9 @@ function tokens() {
   t.ai_ig_debt = aiItem("measure_a_balance_sheet", "ai_ig_debt_outstanding_2025");
   t.hyperscaler_bonds = aiItem("measure_a_balance_sheet", "hyperscaler_bonds_outstanding_2026");
   t.ai_issuance_2026 = aiItem("measure_a_balance_sheet", "ai_debt_issuance_forecast_2026");
-  var corp = S && S.series && S.series.BCNSDODNS;
-  if (corp && corp.values.length) {
-    var corpT = corp.values[corp.values.length - 1] / 1e6;   // millions to trillions
+  var corp = S && S.series && S.series.us_nonfinancial_corporate_debt;
+  if (corp && corp.obs.length) {
+    var corpT = corp.obs[corp.obs.length - 1][1];            // already trillions
     t.corp_debt = { value: +corpT.toFixed(2), unit: "USD_trillions", as_of: corp.as_of,
       confidence: "reported", source: corp.source, source_url: corp.source_url };
     if (t.ai_ig_debt) t.ai_share_high = { value: +(t.ai_ig_debt.value / 1000 / corpT * 100).toFixed(1), unit: "percent" };
@@ -1503,7 +1607,67 @@ function tokens() {
 
 /* ---------------- charts, controls, theme ---------------- */
 
-var state = { mflip: "abs", fed: "both", hh: "gdp", corp: "level" };
+var state = { mflip: "abs", fed: "both", hh: "gdp", corp: "level",
+              bands: { us: true, ca: true } };
+
+/* ---------------- recession bands ----------------
+
+   The shared dataset (econ-core, vendored) dates bands to the month:
+   {"peak": "YYYY-MM", "trough": "YYYY-MM"}, shaded peak month through trough
+   month inclusive. These charts plot by array index rather than on a time
+   scale, so a month boundary has to be interpolated between the two
+   observations that bracket it. Snapping to the nearest observation instead
+   would round a two-month recession up to a whole quarter on the quarterly
+   series, which is most of them. */
+
+function monthNum(ym) { return +ym.slice(0, 4) * 12 + (+ym.slice(5, 7) - 1); }
+
+/* Month position of an ISO date, with the day carried as a fraction so the
+   interpolation is monotonic within a month. */
+function dateMonth(iso) {
+  return monthNum(iso) + ((+iso.slice(8, 10) || 1) - 1) / 31;
+}
+
+/* Fractional index where `target` falls in an ascending numeric array.
+   Clamped, so a band wholly outside the axis collapses to zero width and is
+   dropped by the caller rather than drawn at the edge. */
+function fractionalIndex(vals, target) {
+  var n = vals.length;
+  if (!n) return 0;
+  if (target <= vals[0]) return 0;
+  if (target >= vals[n - 1]) return n - 1;
+  var lo = 0, hi = n - 1;
+  while (hi - lo > 1) {
+    var mid = (lo + hi) >> 1;
+    if (vals[mid] <= target) lo = mid; else hi = mid;
+  }
+  var span = vals[hi] - vals[lo];
+  return span ? lo + (target - vals[lo]) / span : lo;
+}
+
+/* Bands for one chart, as fractional index ranges over its own x axis.
+   `which` names the countries this chart can show. */
+function bandsFor(xs, which) {
+  var out = [];
+  if (!D || !D.recessions || !xs || !xs.length) return out;
+  // Only a dated axis gets bands. The buildout chart's axis is "Year 0".."Year 7",
+  // where a calendar recession has no meaning.
+  if (!/^\d{4}-\d{2}/.test(String(xs[0]))) return out;
+  var vals = xs.map(dateMonth);
+  var alpha = parseFloat(css("--band-alpha")) || 0.09;
+  [{ key: "us", set: D.recessions.us, varName: "--series-1" },
+   { key: "ca", set: D.recessions.ca, varName: "--series-2" }].forEach(function (d) {
+    if (which.indexOf(d.key) === -1 || !d.set || !state.bands[d.key]) return;
+    var fill = rgba(css(d.varName), alpha);
+    d.set.bands.forEach(function (b) {
+      // Trough month inclusive, so the band ends at the start of the month after it.
+      var s = fractionalIndex(vals, monthNum(b.peak));
+      var e = fractionalIndex(vals, monthNum(b.trough) + 1);
+      if (e > s) out.push({ start: s, end: e, fill: fill });
+    });
+  });
+  return out;
+}
 var cMeasures, cFed, cHh, cCyc, cCorp;
 
 function legend(id, series) {
@@ -1518,12 +1682,9 @@ function drawMeasures() {
   var b = D["ai-capital"].measure_b_commitments.history;
   var merged = { series: b.series.concat(a.series) };
   var r = seriesRows(merged);
-  var gdpByYear = {};
-  var g = S.series.GDP;
-  if (g) for (var i = 0; i < g.dates.length; i++) {
-    var y = +g.dates[i].slice(0, 4);
-    gdpByYear[y] = Math.max(gdpByYear[y] || 0, g.values[i]);  // billions
-  }
+  // AI capex is published in billions; GDP now arrives in trillions, so the
+  // share is computed against a billions view of the same series.
+  var gdpByYear = byYear(S.series.us_gdp_nominal);
   var pal = ["--series-2", "--series-3", "--series-1", "--series-4"];
   var out = r.series.map(function (s, k) {
     return {
@@ -1532,7 +1693,7 @@ function drawMeasures() {
         if (v === null) return null;
         if (state.mflip === "abs") return v;
         var gg = gdpByYear[r.xs[j]];
-        return gg ? +(v / gg * 100).toFixed(2) : null;
+        return gg ? +(v / (gg * 1000) * 100).toFixed(2) : null;
       })
     };
   });
@@ -1551,13 +1712,14 @@ function drawMeasures() {
 }
 
 function drawFed() {
-  var ids = state.fed === "total" ? ["GFDEGDQ188S"] :
-            state.fed === "public" ? ["FYGFGDQ188S"] : ["GFDEGDQ188S", "FYGFGDQ188S"];
+  var ids = state.fed === "total" ? ["us_debt_to_gdp_total"] :
+            state.fed === "public" ? ["us_debt_held_by_public_pct_gdp"] :
+            ["us_debt_to_gdp_total", "us_debt_held_by_public_pct_gdp"];
   var r = align(ids);
   var pal = ["--series-1", "--series-3"];
   var out = r.series.map(function (s, k) { return { name: s.name, color: css(pal[k % 2]), values: s.values }; });
   legend("lg-fed", out);
-  cFed.setData(r.xs, out);
+  cFed.setData(r.xs, out, bandsFor(r.xs, ["us"]));
 
   var t = document.getElementById("tbl-fed");
   var rows = r.xs.map(function (x, j) { return { x: x, j: j }; })
@@ -1572,7 +1734,8 @@ function drawFed() {
 }
 
 function drawHh() {
-  var ids = state.hh === "gdp" ? ["HDTGPDUSQ163N", "HDTGPDCAQ163N"] : ["TDSP"];
+  var ids = state.hh === "gdp" ? ["us_household_debt_pct_gdp", "ca_household_debt_pct_gdp"]
+                               : ["us_household_debt_service_ratio"];
   var r = align(ids);
   var pal = ["--series-1", "--series-2"];
   var out = r.series.map(function (s, k) { return { name: s.name, color: css(pal[k % 2]), values: s.values }; });
@@ -1592,7 +1755,9 @@ function drawHh() {
   cHh.opts.unit = "percent";
   cHh.opts.includeZero = state.hh === "gdp" ? false : true;
   legend("lg-hh", out);
-  cHh.setData(r.xs, out);
+  // Both countries: this is the one chart carrying a Canadian series, so a
+  // Canadian recession is the relevant context for half of what is drawn.
+  cHh.setData(r.xs, out, bandsFor(r.xs, ["us", "ca"]));
 }
 
 function drawCyc() {
@@ -1601,19 +1766,15 @@ function drawCyc() {
   // used and the range is stated in the prose beside it.
   var tr = t.peak_capex_share_of_gdp.value_range;
   var tPeak = (tr[0] + tr[1]) / 2;
-  var gdpByYear = {}, g = S.series.GDP, i;
-  if (g) for (i = 0; i < g.dates.length; i++) {
-    var y = +g.dates[i].slice(0, 4);
-    gdpByYear[y] = Math.max(gdpByYear[y] || 0, g.values[i]);
-  }
+  var gdpByYear = byYear(S.series.us_gdp_nominal), i;
   var capex = D["ai-capital"].measure_b_commitments.history.series[0].points;
   var xs = [], aiV = [];
   var base = capex[0].year;
   for (i = 0; i < 8; i++) {
     xs.push("Year " + i);
     var pt = capex.filter(function (p) { return p.year === base + i; })[0];
-    var gg = gdpByYear[base + i];
-    aiV.push(pt && gg ? +(pt.value / gg * 100).toFixed(2) : null);
+    var gg = gdpByYear[base + i];   // trillions; capex points are billions
+    aiV.push(pt && gg ? +(pt.value / (gg * 1000) * 100).toFixed(2) : null);
   }
   // The telecom side is published as a peak range, not a trajectory. Drawing
   // it as a line needed intermediate years nobody published, so it is a
@@ -1634,28 +1795,34 @@ function drawCyc() {
 function drawCorp() {
   var out, xs;
   if (state.corp === "gdp") {
-    // Both legs on one date axis, then divided. BCNSDODNS is in millions and
-    // GDP in billions, so the level has to be reconciled before the ratio.
-    var r = align(["BCNSDODNS", "GDP"]);
+    // Both legs arrive in trillions, converted at fetch time, so the ratio is
+    // a straight division. This used to carry a /1000 to reconcile millions
+    // against billions in the renderer, which is exactly the arithmetic the
+    // series contract moves upstream.
+    var r = align(["us_nonfinancial_corporate_debt", "us_gdp_nominal"]);
     xs = r.xs;
     var debt = r.series[0].values, gdp = r.series[1].values;
     out = [{ name: "Corporate debt as % of GDP", color: css("--series-3"),
       values: xs.map(function (d, i) {
         if (debt[i] === null || gdp[i] === null || !gdp[i]) return null;
-        return +(debt[i] / 1000 / gdp[i] * 100).toFixed(2);
+        return +(debt[i] / gdp[i] * 100).toFixed(2);
       }) }];
     cCorp.opts.unit = "percent";
     cCorp.opts.includeZero = false;
   } else {
-    var s = S.series.BCNSDODNS;
-    xs = s.dates;
+    var s = S.series.us_nonfinancial_corporate_debt;
+    // Guarded: this is the one draw path with no null-safe fallback, so a
+    // missing series here would throw inside render() and the catch would
+    // replace the whole page with the load-failure box.
+    if (!s) return;
+    xs = s.obs.map(function (o) { return o[0]; });
     out = [{ name: s.label, color: css("--series-3"),
-      values: s.values.map(function (v) { return +(v / 1e6).toFixed(3); }) }];
+      values: s.obs.map(function (o) { return +o[1].toFixed(3); }) }];
     cCorp.opts.unit = "USD_trillions";
     cCorp.opts.includeZero = true;
   }
   legend("lg-corp", out);
-  cCorp.setData(xs, out);
+  cCorp.setData(xs, out, bandsFor(xs, ["us"]));
 }
 
 function seg(attr, key, fn) {
@@ -1666,6 +1833,21 @@ function seg(attr, key, fn) {
       b.setAttribute("aria-pressed", "true");
       state[key] = b.getAttribute("data-" + attr);
       fn();
+    });
+  });
+}
+
+/* Independent toggles, not a segmented choice, so this cannot use seg(): both
+   countries can be on at once and either can be off. The control lives in the
+   header rather than in a chart, because one setting drives all three banded
+   charts and a per-chart control would imply otherwise. */
+function initBands() {
+  document.querySelectorAll("[data-band]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var key = b.getAttribute("data-band");
+      state.bands[key] = !state.bands[key];
+      b.setAttribute("aria-pressed", state.bands[key] ? "true" : "false");
+      if (D) redrawSeriesColours();
     });
   });
 }
@@ -1743,6 +1925,7 @@ window.addEventListener("resize", function () {
 });
 
 initTheme();
+initBands();
 load();
 })();
 </script>

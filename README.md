@@ -9,11 +9,40 @@ It has to still work in three years when nobody has run an install in as long.
 ## Layout
 
 ```
-src/index.html   markup, styling and every render function
-data/*.json      curated figures, human-owned, five-field contract
-data/series.json machine-fetched long series, never hand-edited
-api/server.py    updater and read-only status API
+src/index.html        markup, styling and every render function
+data/*.json           curated figures, human-owned, five-field contract
+data/series.json      machine-fetched long series, never hand-edited
+data/recessions.json  vendored from econ-core, never edited here
+api/server.py         updater and read-only status API
+api/econcore.py       vendored from econ-core, never edited here
 ```
+
+## Shared standards
+
+The long series follow the [econ-core](../econ-core) contract, which exists so
+that when `econ` eventually overlays diesel, debt and jobs on common axes, three
+sites do not need refactoring first. Each series carries `id`, `label`, `source`,
+`source_url`, `units`, `freq`, `confidence`, `as_of` and `[date, value]` pairs,
+and is assembled by `econcore.make_series`, which validates and raises rather
+than writing something malformed.
+
+Series are keyed by a stable snake_case id, not by the FRED mnemonic: the
+overlay keys on the id, and FRED's mnemonics are neither stable nor shared
+across sources. Where a series names the same quantity as a curated figure it
+deliberately reuses that figure's id *and* its unit, so one id cannot mean two
+things. `us_gdp_nominal` is the same quantity in `gdp.json` and in
+`series.json`; one is the latest reading, the other the whole history.
+
+`econcore.py` and `recessions.json` are copies, not imports. Every app in this
+collection has to keep working in three years with no installs run in as long,
+so there is no shared runtime path to rot. Update them deliberately:
+
+```bash
+cd ../econ-core && ./vendor.sh ../debt
+```
+
+The stamp at the top of each says exactly which revision this app got. Do not
+edit either in place; edit econ-core and re-vendor.
 
 ## The one rule
 
@@ -49,8 +78,13 @@ Where a figure is contested, the disagreement is the content. A contradiction go
 Two different owners, two different failure modes, so they live apart.
 
 `data/*.json` is the spec. Small, diffable, reviewed by a human. `data/series.json` holds
-thirteen FRED series and roughly 2,900 observations, is rewritten wholesale on every run, and is
-gitignored. Putting a 241-point quarterly array in a curated file would bury every real edit.
+thirteen FRED series and roughly 2,900 observations in the econ-core contract shape, is rewritten
+wholesale on every run, and is gitignored. Putting a 241-point quarterly array in a curated file
+would bury every real edit.
+
+`data/recessions.json` is a third category: machine-generated, but upstream of this repo and
+tracked rather than gitignored, because it changes about once per business cycle and the stamp
+should travel with the commit.
 
 ## How the page gets its data
 
@@ -58,7 +92,8 @@ One endpoint, not seven static files:
 
 ```
 GET /api/data -> meta, gdp, federal-debt, ai-capital, household-debt, cycles,
-                 series, derived, changelog, generated_at
+                 recessions, series, derived, changelog, econcore,
+                 series_errors, generated_at
 ```
 
 The payload is composed **from disk**, cached on the newest mtime across the data directory.
@@ -107,6 +142,41 @@ Four guardrails, each of which has already caught something real:
 `UPDATER_WRITE` is off by default, so a fresh deploy observes and logs for a cycle before it is
 trusted to edit files that took real research to assemble.
 
+The long series are machine-owned and rewritten wholesale, so they follow different rules: nothing
+is preserved across a run because nothing there is hand-authored. What is guarded instead is that
+the file never comes back worse than the one it replaces.
+
+1. **A series that fails to fetch is carried forward** from the last good run rather than
+   disappearing until the next one succeeds.
+2. **A series returning under 90% of the stored observations is refused.** A truncated response is
+   indistinguishable from a real series until you compare lengths.
+3. **A run with nothing fetched and nothing stored refuses to write**, rather than replacing the
+   file with an empty one.
+4. **Every already-published observation an upstream restates is diffed and logged.** A new reading
+   at the end of a series is not a revision; history changing underneath a number the page has
+   already shown is, and it happens quietly.
+
+Curated and series records share `data/changelog.jsonl` and are rendered apart on the page.
+
+### The FRED User-Agent tarpit
+
+Everything touching FRED goes through `econcore`, and the keyless CSV endpoint is asked with
+urllib's honest default User-Agent. This is load-bearing. `fred.stlouisfed.org` tarpits
+User-Agents it does not recognise as a known tool: it answers curl, wget and Python's default
+immediately, and hangs anything else until timeout.
+
+This module used to send its own `debt.chrislawrence.ca` UA on that path, which means the keyless
+fallback documented above had in fact never worked. It was masked because `FRED_API_KEY` was set,
+so the fallback was never taken. Measured 2026-09-07 against `fredgraph.csv?id=GDP`:
+
+| User-Agent | Result |
+|---|---|
+| `debt.chrislawrence.ca (debt atlas updater)` | timed out at 15s |
+| urllib default | 6,398 bytes in 0.2s |
+
+A full keyless run of all thirteen series now completes in about eight seconds. Treasury has no
+such filter and keeps this app's own UA.
+
 ## What cannot be automated
 
 Treasury, FRED and the BIS household series refresh on a schedule. The AI capital figures come
@@ -141,7 +211,8 @@ python3 scripts/check-sources.py
 ```
 
 Walks the data, requests every distinct `source_url`, and reports status plus the final URL after
-redirects. Two link errors reached this repo before it existed, both found by hand: a page cited at
+redirects. `recessions.json` is in scope like everything else, so USREC and the C.D. Howe
+chronology are checked alongside the researched sources. Two link errors reached this repo before it existed, both found by hand: a page cited at
 two different paths, and a bare host standing in for an endpoint.
 
 Two things it gets right that a naive checker does not. It sends full browser headers, because
