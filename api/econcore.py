@@ -1,4 +1,4 @@
-# VENDORED: econ-core 273cdef, vendored 2026-09-07. Do not edit here; edit econ-core and re-vendor.
+# VENDORED: econ-core 6015b74, vendored 2026-09-07. Do not edit here; edit econ-core and re-vendor.
 """econ-core: shared fetchers and series contract for the economic trackers.
 
 One module, vendored into each app by ../vendor.sh rather than imported from a

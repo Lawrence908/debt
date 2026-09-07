@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-09-07T06:45:51.743976+00:00",
+ "generated_at": "2026-09-07T16:42:15.702338+00:00",
  "builder": "econ-core/tools/build-recessions.py",
  "convention": "Shade peak month through trough month inclusive.",
  "us": {
@@ -221,9 +221,9 @@
     "peak": "2020-02",
     "trough": "2020-04",
     "category": null,
-    "source_url": "https://cdhowe.org/council-reports/cd-howe-institute-business-cycle-council-declares-end-Covid-19-recession"
+    "source_url": "https://cdhowe.org/publication/cd-howe-institute-business-cycle-council-declares-end-Covid-19-recession/"
    }
   ]
  },
- "vendored": "econ-core 273cdef, vendored 2026-09-07"
+ "vendored": "econ-core 6015b74, vendored 2026-09-07"
 }
