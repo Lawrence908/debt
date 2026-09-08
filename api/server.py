@@ -757,6 +757,80 @@ def data_stamp():
     return newest
 
 
+# --------------------------------------------------------------------------
+# analysis: the status block econ-core's hub reads
+# --------------------------------------------------------------------------
+
+# Two records, deliberately kept apart. Gross federal debt and debt held by
+# the public both peaked in 1946, thirteen points apart, and quoting a level
+# on one basis against the record on the other is the exact error this file's
+# own definitional_note warns readers about. So the peaks travel with the
+# series id that produced them.
+WWII_PEAKS = {
+    "gross": {"value": 119.1, "year": 1946, "fred": "GFDGDPA188S",
+              "label": "gross federal debt"},
+    "public": {"value": 106.3, "year": 1946, "fred": "FYPUGDA188S",
+               "label": "debt held by the public"},
+}
+
+DEBT_RULE = {
+    "id": "us_debt_to_gdp_total",
+    "threshold": WWII_PEAKS["gross"]["value"],
+    "statement": "Gross federal debt exceeds its 1946 wartime peak of 119.1% "
+                 "of GDP (FRED GFDGDPA188S). Debt held by the public is scored "
+                 "against its own 1946 peak of 106.3% (FRED FYPUGDA188S); the "
+                 "two records sit thirteen points apart and are never quoted "
+                 "across each other.",
+}
+
+
+def build_status(series):
+    """Where federal debt sits against the only level it has ever been near.
+
+    Both bases are reported because the contrast is the finding: on the gross
+    measure the wartime record has already gone, on the public measure it has
+    not, and a reader given only one number cannot tell which they were
+    handed."""
+    status = {}
+    gross = series.get("us_debt_to_gdp_total")
+    if not gross or not gross.get("obs"):
+        return status
+
+    as_of, level = gross["obs"][-1]
+    peak = WWII_PEAKS["gross"]["value"]
+    above = level >= peak
+    record = max(gross["obs"], key=lambda o: o[1])
+    status["us_debt_to_gdp_total"] = {
+        "latest": [as_of, round(level, 1)],
+        "wwii_peak": peak,
+        "record": [record[0], round(record[1], 1)],
+    }
+    status["signal_active"] = above
+
+    detail = "gross debt %.1f%% of GDP against %.1f%% in 1946" % (level, peak)
+
+    public = series.get("us_debt_held_by_public_pct_gdp")
+    if public and public.get("obs"):
+        pub_as_of, pub_level = public["obs"][-1]
+        pub_peak = WWII_PEAKS["public"]["value"]
+        status["us_debt_held_by_public_pct_gdp"] = {
+            "latest": [pub_as_of, round(pub_level, 1)],
+            "wwii_peak": pub_peak,
+            "above_peak": pub_level >= pub_peak,
+        }
+        detail += " · held by the public %.1f%%, %s its own %.1f%% record" % (
+            pub_level, "past" if pub_level >= pub_peak else "still below", pub_peak)
+
+    status["headline"] = {
+        "state": "signal" if above else "normal",
+        "label": "Above the WWII peak" if above else "Below the WWII peak",
+        "detail": detail,
+        "as_of": as_of,
+        "rule": DEBT_RULE["statement"],
+    }
+    return status
+
+
 def build_data_payload():
     """Everything the page consumes, in one object.
 
@@ -785,6 +859,8 @@ def build_data_payload():
         payload["series_fetched_at"] = series.get("fetched_at")
         payload["series_errors"] = series.get("errors", {})
         payload["econcore"] = series.get("econcore")
+        payload["analysis"] = {"status": build_status(payload["series"]),
+                               "rule": DEBT_RULE, "wwii_peaks": WWII_PEAKS}
     except Exception as exc:  # noqa: BLE001 - charts degrade, the page still renders
         payload["series"] = {}
         payload["derived"] = {}
@@ -813,7 +889,22 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802 - BaseHTTPRequestHandler API
         path = urllib.parse.urlparse(self.path).path
         if path == "/api/health":
-            self._send(200, {"status": "ok"})
+            # Probe the dependency, not the process: no data, not healthy.
+            try:
+                series = json.load(open(SERIES_FILE))
+                st = build_status(series.get("series", {}))
+                self._send(200, {
+                    "status": "ok",
+                    "series": len(series.get("series", {})),
+                    "latest": (series.get("series", {})
+                               .get("us_debt_to_gdp_total") or {}).get("as_of"),
+                    "signal_active": st.get("signal_active"),
+                    "headline": st.get("headline"),
+                    "errors": len(series.get("errors", {})),
+                    "fetched_at": series.get("fetched_at"),
+                })
+            except Exception as exc:  # noqa: BLE001 - absent data IS the unhealthy case
+                self._send(503, {"status": "no data", "error": str(exc)})
         elif path == "/api/data":
             self._send(200, build_data_payload(),
                        cache="public, max-age=300, must-revalidate")

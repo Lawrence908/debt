@@ -101,6 +101,17 @@ a { color: var(--series-1); text-underline-offset: 2px; }
 .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 header h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.02em; }
 header p.sub { margin: 0; color: var(--text-secondary); max-width: 62ch; }
+/* Named apart from .chip, which on this page is the confidence tag inside
+   tables. Same pill the other trackers wear, different job. */
+.statuschip {
+  display: inline-flex; align-items: baseline; gap: 8px; margin-top: 16px;
+  padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface-1); font-size: 0.82rem; color: var(--text-secondary);
+}
+.statuschip[hidden] { display: none; }
+.statuschip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--series-3); flex: none; align-self: center; }
+.statuschip[data-state="signal"] .dot { background: var(--series-2); }
+.statuschip b { color: var(--text-primary); font-weight: 650; }
 .stamp { margin-top: 10px; font-size: 0.82rem; color: var(--muted); }
 .stamp .stale { color: var(--warn); font-weight: 600; }
 .muted { color: var(--muted); }
@@ -277,6 +288,7 @@ details.fallback[open] summary { margin-bottom: 8px; }
   <header>
     <h1>Debt Atlas</h1>
     <p class="sub">AI capital, sovereign debt and household balance sheets, put on the same axis. Every figure carries the date it was true and the place it came from.</p>
+    <p class="statuschip" id="statuschip" hidden></p>
     <p class="stamp num" id="stamp"></p>
   </header>
   <div class="bandctl">
@@ -1878,9 +1890,24 @@ function initTheme() {
    theme flip has to re-run the builders, not just redraw with stale colours. */
 function redrawSeriesColours() { drawMeasures(); drawFed(); drawHh(); drawCyc(); drawCorp(); }
 
+/* The one-line state the hub reads, rendered from analysis.status.headline
+   rather than recomputed here: the server owns the rule, the page owns the
+   pill. Lives in the header, so render() replacing #app leaves it alone. */
+function buildChip() {
+  var head = ((S.analysis || {}).status || {}).headline;
+  var chip = document.getElementById("statuschip");
+  if (!head) return;
+  chip.innerHTML = '<span class="dot"></span><span><b>' + esc(head.label) +
+                   "</b> · " + esc(head.detail) + "</span>";
+  chip.setAttribute("data-state", head.state);
+  chip.title = head.rule || "";
+  chip.hidden = false;
+}
+
 function render(log) {
   T = tokens();
   document.getElementById("stamp").innerHTML = stampLine();
+  buildChip();
   document.getElementById("app").innerHTML =
     tiles() + heroScale() + measuresSection() + companiesSection() +
     federalSection() + householdsSection() + cyclesSection() + corporateSection() + changedSection(log) + disputesSection() +
@@ -1910,7 +1937,8 @@ function load() {
   }).then(function (p) {
     D = {};
     FILES.forEach(function (f) { D[f] = p[f]; });
-    S = { series: p.series || {}, derived: p.derived || {}, fetched_at: p.series_fetched_at };
+    S = { series: p.series || {}, derived: p.derived || {}, fetched_at: p.series_fetched_at,
+          analysis: p.analysis || {} };
     render(p.changelog);
   }).catch(function (err) {
     app.innerHTML = '<div class="error"><h2>The data layer did not load</h2><p>' +

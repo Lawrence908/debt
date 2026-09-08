@@ -86,8 +86,10 @@
     "points": [
       {
         "year": 1946,
-        "value": 106,
-        "note": "Second World War financing peak"
+        "value": 119.1,
+        "note": "Second World War financing peak, on the gross basis this chart plots. Debt held by the public peaked separately at 106.3% the same year; that is the figure usually quoted as 'the 1946 record', and quoting it against a gross level overstates the comparison by thirteen points.",
+        "source": "OMB historical tables, via FRED GFDGDPA188S",
+        "source_url": "https://fred.stlouisfed.org/series/GFDGDPA188S"
       },
       {
         "year": 1974,
