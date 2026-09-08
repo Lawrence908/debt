@@ -2,6 +2,6 @@
   <title>debt</title>
   <rect width="64" height="64" rx="13" fill="#12120f"/>
   <g fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M11 49h19c13 0 12-8 16-34" stroke="#1baf7a" fill="none"/>
+  <path d="M11 49h19c13 0 12-8 16-34" stroke="#1baf7a"/>
   </g>
 </svg>
