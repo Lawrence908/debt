@@ -19,7 +19,7 @@ api/econcore.py       vendored from econ-core, never edited here
 
 ## Shared standards
 
-The long series follow the [econ-core](../econ-core) contract, which exists so
+The long series follow the [econ-core](https://github.com/Lawrence908/econ-core) contract, which exists so
 that when `econ` eventually overlays diesel, debt and jobs on common axes, three
 sites do not need refactoring first. Each series carries `id`, `label`, `source`,
 `source_url`, `units`, `freq`, `confidence`, `as_of` and `[date, value]` pairs,
